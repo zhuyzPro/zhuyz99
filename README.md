@@ -28,6 +28,12 @@ https://zhuyzpro.github.io/<仓库名>/
 
 仓库名使用小写字母、数字和短横线最稳妥，例如 `wayfind` 或 `nav-home`。如果以后需要自定义域名，再在仓库的 Pages 设置里填写域名并配置 DNS。
 
+本机已经配置并验证了 GitHub SSH 别名 `github-zhuyzpro`，远程地址可以写成：
+
+```text
+git@github-zhuyzpro:zhuyzPro/<仓库名>.git
+```
+
 ## 文件结构
 
 ```text
