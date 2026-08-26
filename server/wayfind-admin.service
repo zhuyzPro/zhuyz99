@@ -1,0 +1,21 @@
+[Unit]
+Description=Wayfind navigation admin API
+After=network.target
+
+[Service]
+Type=simple
+User=wayfind
+Group=wayfind
+WorkingDirectory=/opt/wayfind-admin
+EnvironmentFile=/etc/wayfind-admin/wayfind.env
+ExecStart=/usr/bin/node /opt/wayfind-admin/server/wayfind-server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/wayfind-admin
+
+[Install]
+WantedBy=multi-user.target
