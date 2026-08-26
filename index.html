@@ -31,7 +31,7 @@
           <button class="icon-button" id="theme-toggle" type="button" aria-label="切换主题" title="切换主题">
             <i data-lucide="sun"></i>
           </button>
-          <a class="icon-button" href="https://github.com/zhuyzPro" target="_blank" rel="noopener noreferrer" aria-label="打开 GitHub" title="打开 GitHub">
+          <a class="icon-button" href="https://github.com/zhuyzPro/zhuyz99" target="_blank" rel="noopener noreferrer" aria-label="打开项目 GitHub" title="打开项目 GitHub">
             <i data-lucide="github"></i>
           </a>
         </div>
@@ -59,10 +59,6 @@
               <i data-lucide="x" aria-hidden="true"></i>
             </button>
           </label>
-          <button class="primary-action" id="open-add-link" type="button">
-            <i data-lucide="plus" aria-hidden="true"></i>
-            <span>新增入口</span>
-          </button>
         </section>
 
         <section class="category-bar" aria-label="站点分类">
@@ -76,11 +72,7 @@
             <div class="empty-state" id="empty-state" hidden>
               <div class="empty-icon" aria-hidden="true"><i data-lucide="compass"></i></div>
               <h2>没有找到匹配入口</h2>
-              <p>换个关键词，或者把它添加进来。</p>
-              <button class="secondary-action" id="empty-add-link" type="button">
-                <i data-lucide="plus" aria-hidden="true"></i>
-                新增入口
-              </button>
+              <p>换个关键词试试。</p>
             </div>
           </div>
 
@@ -106,57 +98,6 @@
         <span id="footer-status">内容随时可改，入口始终在手边。</span>
       </footer>
     </div>
-
-    <dialog class="link-dialog" id="link-dialog" aria-labelledby="dialog-title">
-      <form id="link-form" method="dialog" novalidate>
-        <div class="dialog-heading">
-          <div>
-            <p class="panel-kicker">NEW DESTINATION</p>
-            <h2 id="dialog-title">新增入口</h2>
-          </div>
-          <button class="icon-button" id="close-dialog" type="button" aria-label="关闭" title="关闭">
-            <i data-lucide="x"></i>
-          </button>
-        </div>
-
-        <div class="form-fields">
-          <label class="form-label">
-            <span>名称</span>
-            <input name="title" type="text" maxlength="40" placeholder="例如：我的博客" required />
-          </label>
-          <label class="form-label">
-            <span>地址</span>
-            <input name="url" type="url" inputmode="url" placeholder="https://" required />
-          </label>
-          <div class="form-row">
-            <label class="form-label">
-              <span>分类</span>
-              <select name="category" required>
-                <option value="AI 工具">AI 工具</option>
-                <option value="开发">开发</option>
-                <option value="设计">设计</option>
-                <option value="效率">效率</option>
-                <option value="阅读">阅读</option>
-              </select>
-            </label>
-            <label class="form-label">
-              <span>标记</span>
-              <input name="mark" type="text" maxlength="3" placeholder="NEW" />
-            </label>
-          </div>
-          <label class="form-label">
-            <span>简介 <small>可选</small></span>
-            <textarea name="description" maxlength="100" rows="3" placeholder="一句话说明它适合做什么"></textarea>
-          </label>
-          <p class="form-error" id="form-error" role="alert"></p>
-        </div>
-
-        <div class="dialog-actions">
-          <button class="secondary-action" id="cancel-dialog" type="button">取消</button>
-          <button class="primary-action" type="submit">保存入口</button>
-        </div>
-      </form>
-    </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </body>

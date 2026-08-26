@@ -1,6 +1,5 @@
 const STORAGE_KEYS = {
   favorites: "wayfind:favorites",
-  customLinks: "wayfind:custom-links",
   theme: "wayfind:theme",
 };
 
@@ -167,7 +166,6 @@ const state = {
   activeCategory: "全部",
   query: "",
   favorites: readStorage(STORAGE_KEYS.favorites, []),
-  customLinks: readStorage(STORAGE_KEYS.customLinks, []),
 };
 
 const elements = {};
@@ -189,9 +187,6 @@ function init() {
     themeToggle: document.querySelector("#theme-toggle"),
     clock: document.querySelector("#clock"),
     dateLabel: document.querySelector("#date-label"),
-    dialog: document.querySelector("#link-dialog"),
-    form: document.querySelector("#link-form"),
-    formError: document.querySelector("#form-error"),
     toast: document.querySelector("#toast"),
   });
 
@@ -227,20 +222,12 @@ function bindEvents() {
   });
 
   document.querySelector("#theme-toggle").addEventListener("click", toggleTheme);
-  document.querySelector("#open-add-link").addEventListener("click", openDialog);
-  document.querySelector("#empty-add-link").addEventListener("click", openDialog);
-  document.querySelector("#close-dialog").addEventListener("click", closeDialog);
-  document.querySelector("#cancel-dialog").addEventListener("click", closeDialog);
-  elements.dialog.addEventListener("click", (event) => {
-    if (event.target === elements.dialog) closeDialog();
-  });
-  elements.form.addEventListener("submit", saveCustomLink);
   elements.clearFavorites.addEventListener("click", clearFavorites);
 
   window.addEventListener("keydown", (event) => {
     const activeTag = document.activeElement?.tagName;
     const typing = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
-    if (event.key === "/" && !typing && !elements.dialog.open) {
+    if (event.key === "/" && !typing) {
       event.preventDefault();
       elements.searchInput.focus();
     }
@@ -251,7 +238,7 @@ function bindEvents() {
 }
 
 function allLinks() {
-  return [...state.customLinks, ...DEFAULT_LINKS];
+  return DEFAULT_LINKS;
 }
 
 function render() {
@@ -416,62 +403,6 @@ function updateClock() {
   elements.clock.textContent = time;
   elements.clock.dateTime = now.toISOString();
   elements.dateLabel.textContent = `${weekday} · ${month}月${day}日`;
-}
-
-function openDialog() {
-  elements.form.reset();
-  elements.formError.textContent = "";
-  if (typeof elements.dialog.showModal === "function") {
-    elements.dialog.showModal();
-    window.setTimeout(() => elements.form.elements.title.focus(), 0);
-  }
-}
-
-function closeDialog() {
-  elements.formError.textContent = "";
-  if (elements.dialog.open) elements.dialog.close();
-}
-
-function saveCustomLink(event) {
-  event.preventDefault();
-  const formData = new FormData(elements.form);
-  const title = String(formData.get("title") || "").trim();
-  const rawUrl = String(formData.get("url") || "").trim();
-  const category = String(formData.get("category") || "效率");
-  const description = String(formData.get("description") || "").trim();
-  const mark = String(formData.get("mark") || "").trim().toUpperCase() || initials(title);
-  const url = normalizeUrl(rawUrl);
-
-  if (!title || !rawUrl) {
-    elements.formError.textContent = "名称和地址都需要填写。";
-    return;
-  }
-  try {
-    const parsed = new URL(url);
-    if (!/^https?:$/.test(parsed.protocol)) throw new Error("unsupported");
-  } catch {
-    elements.formError.textContent = "请输入有效的 http 或 https 地址。";
-    return;
-  }
-
-  const customLink = {
-    id: `custom-${Date.now()}`,
-    title,
-    category,
-    mark: mark.slice(0, 3),
-    tone: ["coral", "teal", "yellow", "blue", "purple"][state.customLinks.length % 5],
-    badge: "自定义",
-    description: description || "一个值得放在手边的入口。",
-    url,
-    host: getHost(url),
-    tags: [],
-  };
-  state.customLinks = [customLink, ...state.customLinks];
-  state.activeCategory = "全部";
-  writeStorage(STORAGE_KEYS.customLinks, state.customLinks);
-  elements.dialog.close();
-  render();
-  showToast("入口已保存");
 }
 
 function showToast(message) {
