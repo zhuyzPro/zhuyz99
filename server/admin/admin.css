@@ -32,6 +32,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .brand-copy small { color: var(--faint); font-size: .56rem; font-weight: 700; letter-spacing: .2em; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .session-user { color: var(--muted); font-size: .78rem; }
+.front-link { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .78rem; text-decoration: none; }
+.front-link:hover, .front-link:focus-visible { color: var(--text); }
+.front-link svg { width: 15px; height: 15px; }
 .icon-button { display: inline-grid; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
 .icon-button:hover:not(:disabled), .icon-button:focus-visible:not(:disabled) { border-color: var(--line-strong); background: var(--surface); color: var(--text); }
 .icon-button:disabled { cursor: not-allowed; opacity: .3; }
@@ -67,7 +70,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .category-panels { display: grid; gap: 28px; }
 .category-panel { border-top: 1px solid var(--line-strong); }
 .category-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 17px 0 13px; }
-.category-heading > div { display: flex; align-items: flex-start; gap: 14px; }
+.category-heading-main { display: flex; align-items: flex-start; gap: 14px; }
+.category-heading-actions { display: flex; align-items: center; gap: 8px; }
 .category-heading p { margin: 3px 0 0; color: var(--muted); font-size: .75rem; }
 .section-number { min-width: 25px; margin-top: 3px; color: var(--coral); font-size: .68rem; font-weight: 800; letter-spacing: .1em; }
 .category-count { color: var(--faint); font-size: .72rem; white-space: nowrap; }
@@ -102,6 +106,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
   main { padding-top: 56px; }
   .dashboard-heading { align-items: flex-start; flex-direction: column; gap: 15px; }
   .heading-actions { justify-content: flex-start; }
+  .front-link span { display: none; }
+  .category-heading { align-items: flex-start; }
+  .category-heading-actions { align-self: flex-start; }
   .link-row { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; }
   .row-status { display: none; }
   .row-actions { grid-column: 2 / -1; justify-content: flex-end; }

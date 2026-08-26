@@ -367,6 +367,17 @@ function handleAdminCategory(req, res) {
   }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
 }
 
+function handleAdminCategoryDelete(req, res, id) {
+  if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
+  const category = db.prepare("SELECT id, name FROM categories WHERE id = ?").get(id);
+  if (!category) return sendJson(res, 404, { error: "分类不存在" });
+  if (getCategories().length <= 1) return sendJson(res, 400, { error: "至少需要保留一个分类" });
+  const count = Number(db.prepare("SELECT COUNT(*) AS count FROM links WHERE category = ?").get(category.name).count);
+  if (count > 0) return sendJson(res, 409, { error: `该分类还有 ${count} 个入口，请先移动或删除入口` });
+  db.prepare("DELETE FROM categories WHERE id = ?").run(id);
+  return sendJson(res, 200, { ok: true, categories: getCategories() });
+}
+
 function handleAdminLink(req, res, method, id) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
   return readJson(req).then((body) => {
@@ -429,6 +440,11 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/admin/categories" && req.method === "POST") {
     if (!requireSession(req, res)) return;
     return handleAdminCategory(req, res);
+  }
+  const categoryMatch = pathname.match(/^\/api\/admin\/categories\/([^/]+)$/);
+  if (categoryMatch && req.method === "DELETE") {
+    if (!requireSession(req, res)) return;
+    return handleAdminCategoryDelete(req, res, categoryMatch[1]);
   }
   if (pathname === "/api/admin/links" && req.method === "POST") {
     if (!requireSession(req, res)) return;

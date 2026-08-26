@@ -86,7 +86,7 @@ function render() {
   container.innerHTML = state.categories.map((category, index) => {
     const links = state.links.filter((link) => link.category === category.name).sort((a, b) => a.position - b.position);
     return `<section class="category-panel" aria-labelledby="category-${index}">
-      <div class="category-heading"><div><span class="section-number">${String(index + 1).padStart(2, "0")}</span><div><h2 id="category-${index}">${escapeHtml(category.name)}</h2><p>${escapeHtml(category.description)}</p></div></div><span class="category-count">${links.length} 个入口</span></div>
+      <div class="category-heading"><div class="category-heading-main"><span class="section-number">${String(index + 1).padStart(2, "0")}</span><div><h2 id="category-${index}">${escapeHtml(category.name)}</h2><p>${escapeHtml(category.description)}</p></div></div><div class="category-heading-actions"><span class="category-count">${links.length} 个入口</span><button class="icon-button danger" type="button" data-category-action="delete" data-category-id="${escapeAttribute(category.id)}" title="删除分类" aria-label="删除分类：${escapeAttribute(category.name)}"><i data-lucide="trash-2" aria-hidden="true"></i></button></div></div>
       <div class="link-list">${links.length ? links.map((link, linkIndex) => renderLink(link, linkIndex, links.length)).join("") : `<p class="empty-state">这个分类还没有入口。</p>`}</div>
     </section>`;
   }).join("");
@@ -108,6 +108,20 @@ function renderLink(link, index, total) {
 }
 
 async function handlePanelClick(event) {
+  const categoryButton = event.target.closest("button[data-category-action]");
+  if (categoryButton) {
+    const category = state.categories.find((item) => item.id === categoryButton.dataset.categoryId);
+    if (!category || categoryButton.disabled) return;
+    const linkCount = state.links.filter((link) => link.category === category.name).length;
+    if (!window.confirm(`确定删除分类“${category.name}”吗？${linkCount ? `\n该分类还有 ${linkCount} 个入口，删除会被拒绝。` : ""}`)) return;
+    try {
+      await request(`/admin/categories/${encodeURIComponent(category.id)}`, { method: "DELETE" });
+      state.categories = state.categories.filter((item) => item.id !== category.id);
+      render();
+      showFlash("分类已删除。", "success");
+    } catch (error) { showFlash(error.message, "error"); }
+    return;
+  }
   const button = event.target.closest("button[data-action]");
   if (!button || button.disabled) return;
   const row = button.closest("[data-id]");
