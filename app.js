@@ -154,15 +154,37 @@ const LINKS = [
   },
 ];
 
-document.addEventListener("DOMContentLoaded", () => {
+const PUBLIC_API_URL = "https://zhuyz.art/wayfind-api/public/links";
+
+document.addEventListener("DOMContentLoaded", async () => {
   const container = document.querySelector("#link-sections");
   if (!container) return;
-  container.innerHTML = CATEGORIES.map(renderSection).join("");
+  const data = await loadNavigationData();
+  container.innerHTML = data.categories.map((section) => renderSection(section, data.links)).join("");
   refreshIcons();
 });
 
-function renderSection(section) {
-  const links = LINKS.filter((link) => link.category === section.name);
+async function loadNavigationData() {
+  try {
+    const response = await fetch(PUBLIC_API_URL, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Navigation API returned ${response.status}`);
+    const data = await response.json();
+    if (!Array.isArray(data.links)) throw new Error("Navigation API returned invalid links");
+    return {
+      categories: Array.isArray(data.categories) && data.categories.length ? data.categories : CATEGORIES,
+      links: data.links,
+    };
+  } catch (error) {
+    console.warn("Using built-in navigation data:", error);
+    return { categories: CATEGORIES, links: LINKS };
+  }
+}
+
+function renderSection(section, allLinks) {
+  const links = allLinks.filter((link) => link.category === section.name);
   return `<section class="link-section" id="${escapeAttribute(section.id)}" aria-labelledby="${escapeAttribute(section.id)}-title">
     <div class="section-heading">
       <div class="section-heading-copy">

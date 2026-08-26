@@ -1,0 +1,4 @@
+server/*.sqlite
+server/*.sqlite-shm
+server/*.sqlite-wal
+server/test-cookies.txt

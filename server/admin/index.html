@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>航迹后台</title>
+    <link rel="stylesheet" href="./admin.css" />
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js" defer></script>
+    <script src="./admin.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <div class="admin-shell">
+      <header class="admin-header">
+        <a class="admin-brand" href="./" aria-label="航迹后台首页">
+          <span class="brand-mark" aria-hidden="true"><i data-lucide="route"></i></span>
+          <span class="brand-copy"><strong>航迹后台</strong><small>WAYFIND CONTROL</small></span>
+        </a>
+        <div class="header-actions">
+          <span id="session-user" class="session-user" hidden></span>
+          <button id="logout-button" class="icon-button" type="button" title="退出登录" aria-label="退出登录" hidden>
+            <i data-lucide="log-out" aria-hidden="true"></i>
+          </button>
+        </div>
+      </header>
+
+      <main id="main">
+        <section id="login-view" class="login-view" aria-labelledby="login-title">
+          <p class="eyebrow">PRIVATE ACCESS</p>
+          <h1 id="login-title">登录后台</h1>
+          <p class="login-copy">管理公开导航里的入口和排序。</p>
+          <form id="login-form" class="login-form">
+            <label>用户名<input id="login-username" name="username" autocomplete="username" required /></label>
+            <label>密码<input id="login-password" name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="primary-button" type="submit"><span>登录</span><i data-lucide="arrow-right" aria-hidden="true"></i></button>
+            <p id="login-error" class="form-error" role="alert" hidden></p>
+          </form>
+        </section>
+
+        <section id="dashboard-view" class="dashboard-view" aria-labelledby="dashboard-title" hidden>
+          <div class="dashboard-heading">
+            <div>
+              <p class="eyebrow">LINK DIRECTORY</p>
+              <h1 id="dashboard-title">入口管理</h1>
+              <p class="dashboard-copy">保存后，公开导航下次刷新即可看到最新内容。</p>
+            </div>
+            <button id="add-button" class="primary-button" type="button"><i data-lucide="plus" aria-hidden="true"></i><span>新增入口</span></button>
+          </div>
+          <div id="flash" class="flash" role="status" aria-live="polite" hidden></div>
+          <div id="category-panels" class="category-panels"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="link-dialog" class="link-dialog" aria-labelledby="dialog-title">
+      <form id="link-form" method="dialog">
+        <div class="dialog-header">
+          <div><p class="eyebrow">LINK RECORD</p><h2 id="dialog-title">新增入口</h2></div>
+          <button id="close-dialog" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="form-grid">
+          <label>名称<input id="field-title" name="title" maxlength="80" required /></label>
+          <label>地址<input id="field-url" name="url" type="url" placeholder="https://" maxlength="2048" required /></label>
+          <label>分类<select id="field-category" name="category" required><option value="中转站">中转站</option><option value="其他">其他</option></select></label>
+          <label>缩写<input id="field-mark" name="mark" maxlength="12" required /></label>
+          <label>状态<input id="field-status" name="status" maxlength="24" required /></label>
+          <label>色调<select id="field-tone" name="tone"><option value="teal">青绿</option><option value="coral">珊瑚</option><option value="yellow">黄色</option><option value="blue">蓝色</option><option value="purple">紫色</option></select></label>
+          <label class="full-width">简介<textarea id="field-description" name="description" maxlength="240" rows="3" required></textarea></label>
+          <label class="full-width">说明<input id="field-note" name="note" maxlength="80" required /></label>
+        </div>
+        <p id="dialog-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="cancel-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存入口</span><i data-lucide="check" aria-hidden="true"></i></button></div>
+      </form>
+    </dialog>
+  </body>
+</html>
