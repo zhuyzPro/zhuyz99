@@ -45,7 +45,10 @@
               <h1 id="dashboard-title">入口管理</h1>
               <p class="dashboard-copy">保存后，公开导航下次刷新即可看到最新内容。</p>
             </div>
-            <button id="add-button" class="primary-button" type="button"><i data-lucide="plus" aria-hidden="true"></i><span>新增入口</span></button>
+            <div class="heading-actions">
+              <button id="add-category-button" class="secondary-button" type="button"><i data-lucide="folder-plus" aria-hidden="true"></i><span>新增分类</span></button>
+              <button id="add-button" class="primary-button" type="button"><i data-lucide="plus" aria-hidden="true"></i><span>新增入口</span></button>
+            </div>
           </div>
           <div id="flash" class="flash" role="status" aria-live="polite" hidden></div>
           <div id="category-panels" class="category-panels"></div>
@@ -62,7 +65,7 @@
         <div class="form-grid">
           <label>名称<input id="field-title" name="title" maxlength="80" required /></label>
           <label>地址<input id="field-url" name="url" type="url" placeholder="https://" maxlength="2048" required /></label>
-          <label>分类<select id="field-category" name="category" required><option value="中转站">中转站</option><option value="其他">其他</option></select></label>
+          <label>分类<select id="field-category" name="category" required></select></label>
           <label>缩写<input id="field-mark" name="mark" maxlength="12" required /></label>
           <label>状态<input id="field-status" name="status" maxlength="24" required /></label>
           <label>色调<select id="field-tone" name="tone"><option value="teal">青绿</option><option value="coral">珊瑚</option><option value="yellow">黄色</option><option value="blue">蓝色</option><option value="purple">紫色</option></select></label>
@@ -71,6 +74,21 @@
         </div>
         <p id="dialog-error" class="form-error" role="alert" hidden></p>
         <div class="dialog-actions"><button id="cancel-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存入口</span><i data-lucide="check" aria-hidden="true"></i></button></div>
+      </form>
+    </dialog>
+
+    <dialog id="category-dialog" class="link-dialog" aria-labelledby="category-dialog-title">
+      <form id="category-form" method="dialog">
+        <div class="dialog-header">
+          <div><p class="eyebrow">CATEGORY RECORD</p><h2 id="category-dialog-title">新增分类</h2></div>
+          <button id="close-category-dialog" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="form-grid">
+          <label class="full-width">分类名称<input id="category-name" name="name" maxlength="40" required /></label>
+          <label class="full-width">分类说明<input id="category-description" name="description" maxlength="120" placeholder="例如：工作中经常使用的服务" /></label>
+        </div>
+        <p id="category-dialog-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="cancel-category-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存分类</span><i data-lucide="check" aria-hidden="true"></i></button></div>
       </form>
     </dialog>
   </body>

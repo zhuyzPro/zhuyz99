@@ -1,5 +1,5 @@
 const API_BASE = window.location.pathname.startsWith("/wayfind-admin") ? "/wayfind-api" : "/api";
-const state = { categories: [], links: [], editingId: null };
+const state = { categories: [], links: [], editingId: null, categoryBeforeNew: "", categoryReturnToLink: false };
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
@@ -22,10 +22,15 @@ function bindEvents() {
   document.querySelector("#login-form").addEventListener("submit", login);
   document.querySelector("#logout-button").addEventListener("click", logout);
   document.querySelector("#add-button").addEventListener("click", () => openDialog());
+  document.querySelector("#add-category-button").addEventListener("click", () => openCategoryDialog(false));
   document.querySelector("#category-panels").addEventListener("click", handlePanelClick);
+  document.querySelector("#field-category").addEventListener("change", handleCategorySelect);
   document.querySelector("#link-form").addEventListener("submit", saveLink);
   document.querySelector("#close-dialog").addEventListener("click", closeDialog);
   document.querySelector("#cancel-dialog").addEventListener("click", closeDialog);
+  document.querySelector("#category-form").addEventListener("submit", saveCategory);
+  document.querySelector("#close-category-dialog").addEventListener("click", closeCategoryDialog);
+  document.querySelector("#cancel-category-dialog").addEventListener("click", closeCategoryDialog);
 }
 
 async function login(event) {
@@ -76,6 +81,7 @@ function showLogin() {
 }
 
 function render() {
+  populateCategoryOptions();
   const container = document.querySelector("#category-panels");
   container.innerHTML = state.categories.map((category, index) => {
     const links = state.links.filter((link) => link.category === category.name).sort((a, b) => a.position - b.position);
@@ -134,21 +140,91 @@ async function handlePanelClick(event) {
 function openDialog(link = null) {
   state.editingId = link?.id || null;
   document.querySelector("#dialog-title").textContent = link ? "编辑入口" : "新增入口";
-  const values = link || { category: "中转站", title: "", url: "", mark: "", status: "常用", tone: "teal", description: "", note: "" };
+  const values = link || { category: state.categories[0]?.name || "", title: "", url: "", mark: "", status: "常用", tone: "teal", description: "", note: "" };
+  state.categoryBeforeNew = values.category;
+  populateCategoryOptions(values.category);
   ["title", "url", "category", "mark", "status", "tone", "description", "note"].forEach((field) => {
     document.querySelector(`#field-${field}`).value = values[field] || "";
   });
   hide("#dialog-error");
-  const dialog = document.querySelector("#link-dialog");
-  if (typeof dialog.showModal === "function") dialog.showModal();
-  else dialog.setAttribute("open", "");
-  document.querySelector("#field-title").focus();
+  showLinkDialog();
 }
 
 function closeDialog() {
   const dialog = document.querySelector("#link-dialog");
   if (typeof dialog.close === "function") dialog.close();
   else dialog.removeAttribute("open");
+}
+
+function showLinkDialog() {
+  const dialog = document.querySelector("#link-dialog");
+  if (!dialog.open && typeof dialog.showModal === "function") dialog.showModal();
+  else if (!dialog.open) dialog.setAttribute("open", "");
+  document.querySelector("#field-title").focus();
+}
+
+function populateCategoryOptions(selected = null) {
+  const select = document.querySelector("#field-category");
+  if (!select) return;
+  const current = selected ?? select.value;
+  select.innerHTML = state.categories.map((category) => `<option value="${escapeAttribute(category.name)}">${escapeHtml(category.name)}</option>`).join("") + `<option value="__new__">＋ 新增分类…</option>`;
+  const hasCurrent = state.categories.some((category) => category.name === current);
+  select.value = hasCurrent ? current : (state.categories[0]?.name || "");
+}
+
+function handleCategorySelect(event) {
+  if (event.target.value !== "__new__") return;
+  state.categoryReturnToLink = true;
+  closeDialog();
+  openCategoryDialog(true);
+}
+
+function openCategoryDialog(fromLink = false) {
+  state.categoryReturnToLink = fromLink;
+  if (fromLink) {
+    const current = document.querySelector("#field-category").value;
+    if (current !== "__new__") state.categoryBeforeNew = current || state.categories[0]?.name || "";
+    closeDialog();
+  }
+  document.querySelector("#category-form").reset();
+  hide("#category-dialog-error");
+  const dialog = document.querySelector("#category-dialog");
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+  document.querySelector("#category-name").focus();
+}
+
+function closeCategoryDialog(nextCategory = null) {
+  const dialog = document.querySelector("#category-dialog");
+  if (typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
+  if (state.categoryReturnToLink) {
+    document.querySelector("#field-category").value = nextCategory || state.categoryBeforeNew || state.categories[0]?.name || "";
+    state.categoryReturnToLink = false;
+    showLinkDialog();
+  }
+}
+
+async function saveCategory(event) {
+  event.preventDefault();
+  hide("#category-dialog-error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const button = formElement.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const result = await request("/admin/categories", { method: "POST", body: { name: form.get("name"), description: form.get("description") } });
+    state.categories.push(result.category);
+    state.categories.sort((a, b) => a.position - b.position);
+    populateCategoryOptions(result.category.name);
+    render();
+    closeCategoryDialog(result.category.name);
+    showFlash("分类已添加。", "success");
+  } catch (error) {
+    const target = document.querySelector("#category-dialog-error");
+    target.textContent = error.message;
+    target.hidden = false;
+  } finally { button.disabled = false; }
 }
 
 async function saveLink(event) {

@@ -160,7 +160,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const container = document.querySelector("#link-sections");
   if (!container) return;
   const data = await loadNavigationData();
-  container.innerHTML = data.categories.map((section) => renderSection(section, data.links)).join("");
+  renderSectionNav(data.categories);
+  container.innerHTML = data.categories.map((section, index) => renderSection(section, data.links, index)).join("");
   refreshIcons();
 });
 
@@ -183,12 +184,18 @@ async function loadNavigationData() {
   }
 }
 
-function renderSection(section, allLinks) {
+function renderSectionNav(categories) {
+  const nav = document.querySelector("#section-nav");
+  if (!nav) return;
+  nav.innerHTML = categories.map((category, index) => `<a href="#${escapeAttribute(category.id)}"><span class="nav-index">${String(index + 1).padStart(2, "0")}</span>${escapeHtml(category.name)}</a>`).join("");
+}
+
+function renderSection(section, allLinks, index) {
   const links = allLinks.filter((link) => link.category === section.name);
   return `<section class="link-section" id="${escapeAttribute(section.id)}" aria-labelledby="${escapeAttribute(section.id)}-title">
     <div class="section-heading">
       <div class="section-heading-copy">
-        <p class="section-index">${section.id === "relay" ? "01" : "02"}</p>
+        <p class="section-index">${String(index + 1).padStart(2, "0")}</p>
         <div>
           <h2 id="${escapeAttribute(section.id)}-title">${escapeHtml(section.name)}</h2>
           <p>${escapeHtml(section.description)}</p>

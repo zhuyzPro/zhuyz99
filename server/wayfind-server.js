@@ -20,11 +20,10 @@ const COOKIE_SECURE = process.env.COOKIE_SECURE !== "false";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 1024 * 1024;
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   { id: "relay", name: "中转站", description: "模型聚合、API 与中转服务" },
   { id: "other", name: "其他", description: "日常使用的工具与网站" },
 ];
-const CATEGORY_NAMES = new Set(CATEGORIES.map((category) => category.name));
 const TONES = new Set(["coral", "teal", "yellow", "blue", "purple"]);
 
 const SEED_LINKS = [
@@ -49,6 +48,14 @@ const db = new DatabaseSync(DB_PATH);
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
+  CREATE TABLE IF NOT EXISTS categories (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS links (
     id TEXT PRIMARY KEY,
     category TEXT NOT NULL,
@@ -66,13 +73,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS links_category_position ON links(category, position);
 `);
 
+const categoryInsert = db.prepare(`
+  INSERT OR IGNORE INTO categories (id, name, description, position, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+const categoryNow = new Date().toISOString();
+DEFAULT_CATEGORIES.forEach((category, position) => {
+  categoryInsert.run(category.id, category.name, category.description, position, categoryNow, categoryNow);
+});
+
 if (Number(db.prepare("SELECT COUNT(*) AS count FROM links").get().count) === 0) {
   const insert = db.prepare(`
     INSERT INTO links (id, category, title, mark, tone, status, description, note, url, position, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const now = new Date().toISOString();
-  const positions = new Map(CATEGORIES.map((category) => [category.name, 0]));
+  const positions = new Map(DEFAULT_CATEGORIES.map((category) => [category.name, 0]));
   for (const [category, title, mark, tone, status, description, note, url] of SEED_LINKS) {
     insert.run(crypto.randomUUID(), category, title, mark, tone, status, description, note, url, positions.get(category), now, now);
     positions.set(category, positions.get(category) + 1);
@@ -237,13 +253,21 @@ function textField(value, name, { required = true, max = 240 } = {}) {
   return text;
 }
 
+function getCategories() {
+  return db.prepare("SELECT id, name, description, position FROM categories ORDER BY position, name COLLATE NOCASE").all();
+}
+
+function getCategoryNames() {
+  return new Set(getCategories().map((category) => category.name));
+}
+
 function normalizeLink(input, existing = {}) {
-  const category = textField(input.category ?? existing.category, "分类", { max: 10 });
+  const category = textField(input.category ?? existing.category, "分类", { max: 40 });
   const url = textField(input.url ?? existing.url, "地址", { max: 2048 });
   let parsed;
   try { parsed = new URL(url); } catch { throw Object.assign(new Error("地址格式不正确"), { status: 400 }); }
   if (!["http:", "https:"].includes(parsed.protocol)) throw Object.assign(new Error("地址只能使用 http 或 https"), { status: 400 });
-  if (!CATEGORY_NAMES.has(category)) throw Object.assign(new Error("分类只能是中转站或其他"), { status: 400 });
+  if (!getCategoryNames().has(category)) throw Object.assign(new Error("分类不存在，请先新增分类"), { status: 400 });
   const tone = textField(input.tone ?? existing.tone ?? "teal", "色调", { max: 12 });
   if (!TONES.has(tone)) throw Object.assign(new Error("色调不受支持"), { status: 400 });
   return {
@@ -275,7 +299,7 @@ function toLink(row) {
 }
 
 function getAllLinks() {
-  return db.prepare("SELECT * FROM links ORDER BY category = '其他', position, title COLLATE NOCASE").all().map(toLink);
+  return db.prepare("SELECT links.* FROM links LEFT JOIN categories ON categories.name = links.category ORDER BY categories.position, links.position, links.title COLLATE NOCASE").all().map(toLink);
 }
 
 function getLink(id) {
@@ -309,8 +333,8 @@ function handleLogin(req, res) {
 function handleReorder(req, res) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
   return readJson(req).then((body) => {
-    const category = textField(body.category, "分类", { max: 10 });
-    if (!CATEGORY_NAMES.has(category) || !Array.isArray(body.ids) || body.ids.length === 0) throw Object.assign(new Error("排序数据不正确"), { status: 400 });
+    const category = textField(body.category, "分类", { max: 40 });
+    if (!getCategoryNames().has(category) || !Array.isArray(body.ids) || body.ids.length === 0) throw Object.assign(new Error("排序数据不正确"), { status: 400 });
     const current = db.prepare("SELECT id FROM links WHERE category = ? ORDER BY position").all(category).map((row) => row.id);
     if (current.length !== body.ids.length || new Set(current).size !== new Set(body.ids).size || !current.every((id) => body.ids.includes(id))) throw Object.assign(new Error("排序数据与当前分类不一致"), { status: 400 });
     db.exec("BEGIN");
@@ -324,6 +348,22 @@ function handleReorder(req, res) {
       throw error;
     }
     sendJson(res, 200, { ok: true, links: getAllLinks() });
+  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+}
+
+function handleAdminCategory(req, res) {
+  if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
+  return readJson(req).then((body) => {
+    const name = textField(body.name, "分类名称", { max: 40 });
+    const description = textField(body.description, "分类说明", { required: false, max: 120 }) || "自定义入口集合";
+    const duplicate = db.prepare("SELECT id FROM categories WHERE name = ? COLLATE NOCASE").get(name);
+    if (duplicate) throw Object.assign(new Error("这个分类已经存在"), { status: 409 });
+    const now = new Date().toISOString();
+    const position = Number(db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS position FROM categories").get().position);
+    const category = { id: `category-${crypto.randomUUID()}`, name, description, position, created_at: now, updated_at: now };
+    db.prepare("INSERT INTO categories (id, name, description, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(category.id, category.name, category.description, category.position, category.created_at, category.updated_at);
+    return sendJson(res, 201, { category: { id: category.id, name: category.name, description: category.description, position: category.position } });
   }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
 }
 
@@ -371,7 +411,7 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith("/api/")) applyCors(req, res);
   if (req.method === "OPTIONS" && pathname.startsWith("/api/")) return res.writeHead(204).end();
   if (pathname === "/api/health" && req.method === "GET") return sendJson(res, 200, { ok: true, service: "wayfind-admin" });
-  if (pathname === "/api/public/links" && req.method === "GET") return sendJson(res, 200, { categories: CATEGORIES, links: getAllLinks() });
+  if (pathname === "/api/public/links" && req.method === "GET") return sendJson(res, 200, { categories: getCategories(), links: getAllLinks() });
   if (pathname === "/api/auth/login" && req.method === "POST") return handleLogin(req, res);
   if (pathname === "/api/auth/logout" && req.method === "POST") {
     const session = getSession(req);
@@ -384,7 +424,11 @@ const server = http.createServer((req, res) => {
   }
   if (pathname === "/api/admin/links" && req.method === "GET") {
     if (!requireSession(req, res)) return;
-    return sendJson(res, 200, { categories: CATEGORIES, links: getAllLinks() });
+    return sendJson(res, 200, { categories: getCategories(), links: getAllLinks() });
+  }
+  if (pathname === "/api/admin/categories" && req.method === "POST") {
+    if (!requireSession(req, res)) return;
+    return handleAdminCategory(req, res);
   }
   if (pathname === "/api/admin/links" && req.method === "POST") {
     if (!requireSession(req, res)) return;

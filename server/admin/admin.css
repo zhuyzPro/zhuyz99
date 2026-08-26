@@ -60,6 +60,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .dashboard-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
 .dashboard-heading h1 { margin-bottom: 10px; }
 .dashboard-copy { margin: 0; }
+.heading-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
 .flash { margin: -10px 0 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: .78rem; }
 .flash.success { border-color: rgba(97, 216, 196, .4); color: var(--teal); }
 .flash.error { border-color: rgba(255, 118, 99, .4); color: var(--danger); }
@@ -100,6 +101,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
   .admin-shell { width: calc(100% - 28px); padding-top: 17px; }
   main { padding-top: 56px; }
   .dashboard-heading { align-items: flex-start; flex-direction: column; gap: 15px; }
+  .heading-actions { justify-content: flex-start; }
   .link-row { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; }
   .row-status { display: none; }
   .row-actions { grid-column: 2 / -1; justify-content: flex-end; }
