@@ -1,11 +1,55 @@
 const API_BASE = window.location.pathname.startsWith("/wayfind-admin") ? "/wayfind-api" : "/api";
+const THEME_STORAGE_KEY = "wayfind-admin-theme";
 const state = { categories: [], links: [], editingId: null, categoryBeforeNew: "", categoryReturnToLink: false, pendingCategoryDelete: null };
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
+  initializeTheme();
   refreshIcons();
   start();
 });
+
+function initializeTheme() {
+  const savedTheme = readStoredTheme();
+  applyTheme(savedTheme === "dark" ? "dark" : "light", false);
+
+  const toggle = document.querySelector("#theme-toggle");
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    applyTheme(currentTheme === "dark" ? "light" : "dark");
+  });
+}
+
+function readStoredTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function applyTheme(theme, persist = true) {
+  const normalizedTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = normalizedTheme;
+
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+    } catch {
+      // The visual switch still works when storage is unavailable.
+    }
+  }
+
+  const toggle = document.querySelector("#theme-toggle");
+  if (!toggle) return;
+  const isDark = normalizedTheme === "dark";
+  const nextLabel = isDark ? "切换浅色模式" : "切换深色模式";
+  toggle.innerHTML = `<i data-lucide="${isDark ? "sun" : "moon"}" aria-hidden="true"></i>`;
+  toggle.title = nextLabel;
+  toggle.setAttribute("aria-label", nextLabel);
+  refreshIcons();
+}
 
 async function start() {
   try {

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Zhuyz Pro导航后台</title>
+    <script>
+      (() => {
+        try {
+          if (localStorage.getItem("wayfind-admin-theme") === "dark") {
+            document.documentElement.dataset.theme = "dark";
+          }
+        } catch {
+          // Storage can be unavailable in privacy-restricted browsers.
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="./admin.css" />
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js" defer></script>
     <script src="./admin.js" defer></script>
@@ -109,5 +120,9 @@
         <div class="dialog-actions"><button id="cancel-category-delete-dialog" class="secondary-button" type="button">取消</button><button class="danger-button" type="submit"><i data-lucide="trash-2" aria-hidden="true"></i><span>删除分类</span></button></div>
       </form>
     </dialog>
+
+    <button id="theme-toggle" class="theme-toggle" type="button" title="切换深色模式" aria-label="切换深色模式">
+      <i data-lucide="moon" aria-hidden="true"></i>
+    </button>
   </body>
 </html>
