@@ -4,6 +4,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const net = require("node:net");
 const { URL } = require("node:url");
 const { DatabaseSync } = require("node:sqlite");
 
@@ -11,6 +12,12 @@ const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4899);
 const ROOT_DIR = path.resolve(__dirname);
 const ADMIN_DIR = path.join(ROOT_DIR, "admin");
+const ADMIN_FILES = new Map([
+  ["index.html", "text/html; charset=utf-8"],
+  ["admin.css", "text/css; charset=utf-8"],
+  ["admin.js", "application/javascript; charset=utf-8"],
+  ["lucide.js", "application/javascript; charset=utf-8"],
+]);
 const DB_PATH = process.env.DB_PATH || path.join(ROOT_DIR, "wayfind.sqlite");
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "";
@@ -19,6 +26,13 @@ const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toSt
 const COOKIE_SECURE = process.env.COOKIE_SECURE !== "false";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_LOGIN_ATTEMPT_RECORDS = 10_000;
+const MAX_SESSION_RECORDS = 10_000;
+const ADMIN_ORIGINS = new Set([
+  process.env.ADMIN_ORIGIN || "https://zhuyz.art",
+  "http://127.0.0.1:4899",
+  "http://localhost:4899",
+]);
 const PUBLIC_ORIGINS = new Set(
   [
     process.env.PUBLIC_ORIGINS,
@@ -79,6 +93,7 @@ db.exec(`
     status TEXT NOT NULL,
     description TEXT NOT NULL,
     note TEXT NOT NULL,
+    admin_note TEXT NOT NULL DEFAULT '',
     url TEXT NOT NULL,
     position INTEGER NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -88,15 +103,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS links_category_position ON links(category, position);
 `);
 
-function ensureEnabledColumn(table) {
+function ensureColumn(table, column, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (!columns.some((column) => column.name === "enabled")) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`);
+  if (!columns.some((entry) => entry.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
 }
 
-ensureEnabledColumn("categories");
-ensureEnabledColumn("links");
+ensureColumn("categories", "enabled", "INTEGER NOT NULL DEFAULT 1");
+ensureColumn("links", "enabled", "INTEGER NOT NULL DEFAULT 1");
+ensureColumn("links", "admin_note", "TEXT NOT NULL DEFAULT ''");
 
 const categoryInsert = db.prepare(`
   INSERT OR IGNORE INTO categories (id, name, description, position, created_at, updated_at)
@@ -137,13 +153,20 @@ function hashPassword(password) {
 
 function verifyPassword(password, encoded) {
   try {
-    const [, saltText, keyText] = String(encoded).split("$");
+    const [algorithm, saltText, keyText, extra] = String(encoded).split("$");
+    if (algorithm !== "scrypt" || !saltText || !keyText || extra !== undefined) return Promise.resolve(false);
+
     const salt = Buffer.from(saltText, "base64url");
     const expected = Buffer.from(keyText, "base64url");
-    const actual = crypto.scryptSync(password, salt, expected.length, { N: 16384, r: 8, p: 1 });
-    return expected.length > 0 && crypto.timingSafeEqual(actual, expected);
+    if (salt.length === 0 || expected.length === 0) return Promise.resolve(false);
+
+    return new Promise((resolve) => {
+      crypto.scrypt(password, salt, expected.length, { N: 16384, r: 8, p: 1 }, (error, actual) => {
+        resolve(!error && actual.length === expected.length && crypto.timingSafeEqual(actual, expected));
+      });
+    });
   } catch {
-    return false;
+    return Promise.resolve(false);
   }
 }
 
@@ -165,9 +188,22 @@ function sendText(res, status, body, contentType = "text/plain; charset=utf-8") 
   res.writeHead(status, {
     "Content-Type": contentType,
     "Content-Length": Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
     "X-Content-Type-Options": "nosniff",
   });
   res.end(body);
+}
+
+function sendRequestError(res, error) {
+  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+  if (status === 500) console.error(error);
+  if (res.headersSent || res.writableEnded) {
+    res.destroy();
+    return;
+  }
+  sendJson(res, status, { error: status === 500 ? "服务器暂时无法处理请求" : error.message });
 }
 
 function applyCors(req, res) {
@@ -182,21 +218,50 @@ function applyCors(req, res) {
 
 function isAllowedAdminOrigin(req) {
   const origin = req.headers.origin;
-  if (!origin) return true;
-  const allowed = new Set([
-    process.env.ADMIN_ORIGIN || "https://zhuyz.art",
-    "http://127.0.0.1:4899",
-    "http://localhost:4899",
-  ]);
-  return allowed.has(origin);
+  return typeof origin === "string" && ADMIN_ORIGINS.has(origin);
 }
 
 function parseCookies(header) {
   return String(header || "").split(";").reduce((cookies, item) => {
     const index = item.indexOf("=");
-    if (index > 0) cookies[item.slice(0, index).trim()] = decodeURIComponent(item.slice(index + 1).trim());
+    if (index > 0) {
+      const name = item.slice(0, index).trim();
+      if (!name) return cookies;
+      try {
+        cookies[name] = decodeURIComponent(item.slice(index + 1).trim());
+      } catch {
+        // Ignore malformed cookie values instead of failing the request.
+      }
+    }
     return cookies;
   }, {});
+}
+
+function pruneLoginAttempts(now) {
+  for (const [address, record] of loginAttempts) {
+    if (record.resetAt <= now) loginAttempts.delete(address);
+  }
+  while (loginAttempts.size >= MAX_LOGIN_ATTEMPT_RECORDS) {
+    loginAttempts.delete(loginAttempts.keys().next().value);
+  }
+}
+
+function pruneExpiredSessions(now) {
+  for (const [id, session] of sessions) {
+    if (session.expiresAt <= now) sessions.delete(id);
+  }
+  while (sessions.size >= MAX_SESSION_RECORDS) {
+    sessions.delete(sessions.keys().next().value);
+  }
+}
+
+function clientAddress(req) {
+  const socketAddress = req.socket.remoteAddress || "unknown";
+  const isLoopback = socketAddress === "127.0.0.1" || socketAddress === "::1" || socketAddress === "::ffff:127.0.0.1";
+  if (!isLoopback) return socketAddress;
+  const realIp = req.headers["x-real-ip"];
+  const candidate = Array.isArray(realIp) ? realIp[0] : String(realIp || "").trim();
+  return net.isIP(candidate) ? candidate : socketAddress;
 }
 
 function signSession(id) {
@@ -204,6 +269,7 @@ function signSession(id) {
 }
 
 function createSession(username) {
+  pruneExpiredSessions(Date.now());
   const id = crypto.randomBytes(32).toString("base64url");
   sessions.set(id, { username, expiresAt: Date.now() + SESSION_TTL_MS });
   return `${id}.${signSession(id)}`;
@@ -211,10 +277,12 @@ function createSession(username) {
 
 function getSession(req) {
   const token = parseCookies(req.headers.cookie).wayfind_session;
-  if (!token) return null;
-  const [id, signature] = token.split(".");
-  const expectedSignature = signSession(id);
-  if (!id || !signature || signature.length !== expectedSignature.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) return null;
+  if (typeof token !== "string") return null;
+  const [id, signature, ...rest] = token.split(".");
+  if (!id || !signature || rest.length > 0) return null;
+  const expectedSignature = Buffer.from(signSession(id), "base64url");
+  const actualSignature = Buffer.from(signature, "base64url");
+  if (actualSignature.length !== expectedSignature.length || !crypto.timingSafeEqual(actualSignature, expectedSignature)) return null;
   const session = sessions.get(id);
   if (!session || session.expiresAt <= Date.now()) {
     sessions.delete(id);
@@ -246,23 +314,36 @@ function readJson(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     req.on("data", (chunk) => {
+      if (settled) return;
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        reject(Object.assign(new Error("请求内容过大"), { status: 413 }));
-        req.destroy();
+        fail(Object.assign(new Error("请求内容过大"), { status: 413 }));
+        req.resume();
         return;
       }
       chunks.push(chunk);
     });
     req.on("end", () => {
+      if (settled) return;
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
-      } catch {
-        reject(Object.assign(new Error("请求不是有效 JSON"), { status: 400 }));
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+          throw Object.assign(new Error("请求体必须是 JSON 对象"), { status: 400 });
+        }
+        settled = true;
+        resolve(body);
+      } catch (error) {
+        fail(error?.status ? error : Object.assign(new Error("请求不是有效 JSON"), { status: 400 }));
       }
     });
-    req.on("error", reject);
+    req.on("error", fail);
   });
 }
 
@@ -306,6 +387,7 @@ function normalizeLink(input, existing = {}) {
   let parsed;
   try { parsed = new URL(url); } catch { throw Object.assign(new Error("地址格式不正确"), { status: 400 }); }
   if (!["http:", "https:"].includes(parsed.protocol)) throw Object.assign(new Error("地址只能使用 http 或 https"), { status: 400 });
+  if (parsed.username || parsed.password) throw Object.assign(new Error("地址不能包含账号或密码"), { status: 400 });
   if (!getCategoryNames().has(category)) throw Object.assign(new Error("分类不存在，请先新增分类"), { status: 400 });
   const tone = textField(input.tone ?? existing.tone ?? "teal", "色调", { max: 12 });
   if (!TONES.has(tone)) throw Object.assign(new Error("色调不受支持"), { status: 400 });
@@ -317,6 +399,7 @@ function normalizeLink(input, existing = {}) {
     status: textField(input.status ?? existing.status, "状态", { max: 24 }),
     description: textField(input.description ?? existing.description, "简介", { max: 240 }),
     note: textField(input.note ?? existing.note, "说明", { max: 80 }),
+    adminNote: textField(input.adminNote ?? existing.adminNote, "后台备注", { required: false, max: 500 }),
     url: parsed.toString(),
   };
 }
@@ -331,6 +414,7 @@ function toLink(row) {
     status: row.status,
     description: row.description,
     note: row.note,
+    adminNote: row.admin_note ?? row.adminNote ?? "",
     url: row.url,
     position: row.position,
     enabled: Number(row.enabled) === 1,
@@ -343,7 +427,23 @@ function getAllLinks() {
 }
 
 function getPublicLinks() {
-  return db.prepare("SELECT links.* FROM links INNER JOIN categories ON categories.name = links.category WHERE links.enabled = 1 AND categories.enabled = 1 ORDER BY categories.position, links.position, links.title COLLATE NOCASE").all().map(toLink);
+  return db.prepare("SELECT links.id, links.category, links.title, links.mark, links.tone, links.status, links.description, links.note, links.url, links.position, links.enabled, links.updated_at FROM links INNER JOIN categories ON categories.name = links.category WHERE links.enabled = 1 AND categories.enabled = 1 ORDER BY categories.position, links.position, links.title COLLATE NOCASE").all().map(toPublicLink);
+}
+
+function toPublicLink(row) {
+  return {
+    id: row.id,
+    category: row.category,
+    title: row.title,
+    mark: row.mark,
+    tone: row.tone,
+    status: row.status,
+    description: row.description,
+    note: row.note,
+    url: row.url,
+    position: row.position,
+    updatedAt: row.updated_at,
+  };
 }
 
 function getLink(id) {
@@ -358,20 +458,21 @@ function nextPosition(category) {
 
 function handleLogin(req, res) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
-  const address = req.headers["x-real-ip"] || req.socket.remoteAddress || "unknown";
+  const address = clientAddress(req);
   const now = Date.now();
+  pruneLoginAttempts(now);
   const record = loginAttempts.get(address) || { count: 0, resetAt: now + 15 * 60 * 1000 };
   if (record.resetAt <= now) { record.count = 0; record.resetAt = now + 15 * 60 * 1000; }
   if (record.count >= 10) return sendJson(res, 429, { error: "尝试次数过多，请稍后再试" });
-  return readJson(req).then((body) => {
+  return readJson(req).then(async (body) => {
     record.count += 1;
     loginAttempts.set(address, record);
     const username = String(body.username || "").trim();
     const password = String(body.password || "");
-    if (username !== ADMIN_USERNAME || !verifyPassword(password, PASSWORD_HASH)) return sendJson(res, 401, { error: "用户名或密码不正确" });
+    if (username !== ADMIN_USERNAME || !(await verifyPassword(password, PASSWORD_HASH))) return sendJson(res, 401, { error: "用户名或密码不正确" });
     loginAttempts.delete(address);
     sendJson(res, 200, { ok: true, username }, { "Set-Cookie": sessionCookie(createSession(username)) });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function handleReorder(req, res) {
@@ -392,7 +493,7 @@ function handleReorder(req, res) {
       throw error;
     }
     sendJson(res, 200, { ok: true, links: getAllLinks() });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function handleAdminCategory(req, res) {
@@ -408,7 +509,38 @@ function handleAdminCategory(req, res) {
     db.prepare("INSERT INTO categories (id, name, description, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run(category.id, category.name, category.description, category.position, category.created_at, category.updated_at);
     return sendJson(res, 201, { category: toCategory(category) });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
+}
+
+function handleAdminCategoryUpdate(req, res, id) {
+  if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
+  return readJson(req).then((body) => {
+    const category = db.prepare("SELECT id, name, description, position, enabled FROM categories WHERE id = ?").get(id);
+    if (!category) return sendJson(res, 404, { error: "分类不存在" });
+
+    const name = textField(body.name, "分类名称", { max: 40 });
+    const description = textField(body.description, "分类说明", { required: false, max: 120 }) || "自定义入口集合";
+    const duplicate = db.prepare("SELECT id FROM categories WHERE name = ? COLLATE NOCASE AND id != ?").get(name, id);
+    if (duplicate) throw Object.assign(new Error("这个分类已经存在"), { status: 409 });
+
+    const now = new Date().toISOString();
+    db.exec("BEGIN");
+    try {
+      db.prepare("UPDATE categories SET name = ?, description = ?, updated_at = ? WHERE id = ?").run(name, description, now, id);
+      if (name !== category.name) {
+        db.prepare("UPDATE links SET category = ?, updated_at = ? WHERE category = ?").run(name, now, category.name);
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+
+    return sendJson(res, 200, {
+      category: toCategory({ ...category, name, description }),
+      links: getAllLinks(),
+    });
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function handleAdminCategoryEnabled(req, res, id) {
@@ -420,7 +552,7 @@ function handleAdminCategoryEnabled(req, res, id) {
     const now = new Date().toISOString();
     db.prepare("UPDATE categories SET enabled = ?, updated_at = ? WHERE id = ?").run(enabled ? 1 : 0, now, id);
     return sendJson(res, 200, { category: toCategory({ ...category, enabled: enabled ? 1 : 0 }) });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function handleAdminCategoryDelete(req, res, id) {
@@ -452,7 +584,7 @@ function handleAdminCategoryDelete(req, res, id) {
       throw error;
     }
     return sendJson(res, 200, { ok: true, categories: getCategories(), links: getAllLinks() });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function handleAdminLink(req, res, method, id) {
@@ -462,8 +594,8 @@ function handleAdminLink(req, res, method, id) {
       const link = normalizeLink(body);
       const now = new Date().toISOString();
       const created = { id: crypto.randomUUID(), ...link, position: nextPosition(link.category), enabled: true, created_at: now, updated_at: now };
-      db.prepare(`INSERT INTO links (id, category, title, mark, tone, status, description, note, url, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(created.id, created.category, created.title, created.mark, created.tone, created.status, created.description, created.note, created.url, created.position, created.created_at, created.updated_at);
+      db.prepare(`INSERT INTO links (id, category, title, mark, tone, status, description, note, admin_note, url, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(created.id, created.category, created.title, created.mark, created.tone, created.status, created.description, created.note, created.adminNote, created.url, created.position, created.created_at, created.updated_at);
       return sendJson(res, 201, { link: toLink(created) });
     }
     const existing = getLink(id);
@@ -475,10 +607,10 @@ function handleAdminLink(req, res, method, id) {
     const link = normalizeLink(body, existing);
     const now = new Date().toISOString();
     const position = link.category === existing.category ? existing.position : nextPosition(link.category);
-    db.prepare(`UPDATE links SET category = ?, title = ?, mark = ?, tone = ?, status = ?, description = ?, note = ?, url = ?, position = ?, updated_at = ? WHERE id = ?`)
-      .run(link.category, link.title, link.mark, link.tone, link.status, link.description, link.note, link.url, position, now, id);
+    db.prepare(`UPDATE links SET category = ?, title = ?, mark = ?, tone = ?, status = ?, description = ?, note = ?, admin_note = ?, url = ?, position = ?, updated_at = ? WHERE id = ?`)
+      .run(link.category, link.title, link.mark, link.tone, link.status, link.description, link.note, link.adminNote, link.url, position, now, id);
     return sendJson(res, 200, { link: toLink({ ...existing, ...link, id, position, updated_at: now }) });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function handleAdminLinkEnabled(req, res, id) {
@@ -490,30 +622,31 @@ function handleAdminLinkEnabled(req, res, id) {
     const now = new Date().toISOString();
     db.prepare("UPDATE links SET enabled = ?, updated_at = ? WHERE id = ?").run(enabled ? 1 : 0, now, id);
     return sendJson(res, 200, { link: { ...existing, enabled, updatedAt: now } });
-  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+  }).catch((error) => sendRequestError(res, error));
 }
 
 function serveAdminFile(req, res, pathname) {
   const relative = pathname === "/admin/" ? "index.html" : pathname.slice("/admin/".length);
-  if (!relative || relative.includes("..") || relative.includes("\\")) return sendText(res, 404, "Not found\n");
+  const contentType = ADMIN_FILES.get(relative);
+  if (!contentType) return sendText(res, 404, "Not found\n");
   const file = path.join(ADMIN_DIR, relative);
-  if (!file.startsWith(ADMIN_DIR + path.sep)) return sendText(res, 404, "Not found\n");
   try {
     const body = fs.readFileSync(file);
-    const type = file.endsWith(".html") ? "text/html; charset=utf-8" : file.endsWith(".css") ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8";
-    sendText(res, 200, body, type);
+    sendText(res, 200, body, contentType);
   } catch { sendText(res, 404, "Not found\n"); }
 }
 
 const server = http.createServer((req, res) => {
-  const requestUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const pathname = requestUrl.pathname;
+  try {
+    const requestUrl = new URL(req.url || "/", "http://localhost");
+    const pathname = requestUrl.pathname;
   if (pathname.startsWith("/api/")) applyCors(req, res);
   if (req.method === "OPTIONS" && pathname.startsWith("/api/")) return res.writeHead(204).end();
   if (pathname === "/api/health" && req.method === "GET") return sendJson(res, 200, { ok: true, service: "wayfind-admin" });
   if (pathname === "/api/public/links" && req.method === "GET") return sendJson(res, 200, { categories: getPublicCategories(), links: getPublicLinks() });
   if (pathname === "/api/auth/login" && req.method === "POST") return handleLogin(req, res);
   if (pathname === "/api/auth/logout" && req.method === "POST") {
+    if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
     const session = getSession(req);
     if (session) sessions.delete(session.id);
     return sendJson(res, 200, { ok: true }, { "Set-Cookie": clearSessionCookie() });
@@ -536,6 +669,10 @@ const server = http.createServer((req, res) => {
     return handleAdminCategoryEnabled(req, res, categoryEnabledMatch[1]);
   }
   const categoryMatch = pathname.match(/^\/api\/admin\/categories\/([^/]+)$/);
+  if (categoryMatch && req.method === "PUT") {
+    if (!requireSession(req, res)) return;
+    return handleAdminCategoryUpdate(req, res, categoryMatch[1]);
+  }
   if (categoryMatch && req.method === "DELETE") {
     if (!requireSession(req, res)) return;
     return handleAdminCategoryDelete(req, res, categoryMatch[1]);
@@ -564,6 +701,9 @@ const server = http.createServer((req, res) => {
   }
   if (pathname.startsWith("/admin/") && req.method === "GET") return serveAdminFile(req, res, pathname);
   sendText(res, 404, "Not found\n");
+  } catch (error) {
+    sendRequestError(res, error);
+  }
 });
 
 server.listen(PORT, HOST, () => {

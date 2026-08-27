@@ -1,7 +1,7 @@
 const API_BASE = window.location.pathname.startsWith("/wayfind-admin") ? "/wayfind-api" : "/api";
 const THEME_STORAGE_KEY = "wayfind-admin-theme";
 const TONES = new Set(["coral", "teal", "yellow", "blue", "purple", "orange", "rose", "lime", "indigo"]);
-const state = { categories: [], links: [], editingId: null, categoryBeforeNew: "", categoryReturnToLink: false, pendingCategoryDelete: null };
+const state = { categories: [], links: [], editingId: null, editingCategoryId: null, categoryBeforeNew: "", categoryReturnToLink: false, pendingCategoryDelete: null };
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
@@ -67,10 +67,11 @@ function bindEvents() {
   document.querySelector("#login-form").addEventListener("submit", login);
   document.querySelector("#logout-button").addEventListener("click", logout);
   document.querySelector("#add-button").addEventListener("click", () => openDialog());
-  document.querySelector("#add-category-button").addEventListener("click", () => openCategoryDialog(false));
+  document.querySelector("#add-category-button").addEventListener("click", () => openCategoryDialog());
   document.querySelector("#category-panels").addEventListener("click", handlePanelClick);
   document.querySelector("#field-category").addEventListener("change", handleCategorySelect);
   document.querySelector("#tone-picker").addEventListener("click", handleToneSelect);
+  document.querySelector("#tone-picker").addEventListener("keydown", handleToneKeydown);
   document.querySelector("#link-form").addEventListener("submit", saveLink);
   document.querySelector("#close-dialog").addEventListener("click", closeDialog);
   document.querySelector("#cancel-dialog").addEventListener("click", closeDialog);
@@ -101,8 +102,12 @@ async function login(event) {
 }
 
 async function logout() {
-  await request("/auth/logout", { method: "POST" }).catch(() => {});
-  showLogin();
+  try {
+    await request("/auth/logout", { method: "POST" });
+    showLogin();
+  } catch (error) {
+    showFlash(error.message, "error");
+  }
 }
 
 async function showDashboard(username) {
@@ -120,6 +125,11 @@ async function showDashboard(username) {
     state.links = data.links || [];
     render();
   } catch (error) {
+    if (error.status === 401) {
+      showLogin();
+      showLoginError(error.message);
+      return;
+    }
     showFlash(error.message, "error");
   }
 }
@@ -142,7 +152,7 @@ function render() {
     const links = state.links.filter((link) => link.category === category.name).sort((a, b) => a.position - b.position);
     const enabled = isEnabled(category);
     return `<section class="category-panel${enabled ? "" : " is-disabled"}" aria-labelledby="category-${index}">
-      <div class="category-heading"><div class="category-heading-main"><span class="section-number">${String(index + 1).padStart(2, "0")}</span><div><h2 id="category-${index}">${escapeHtml(category.name)}</h2><p>${escapeHtml(category.description)}</p></div></div><div class="category-heading-actions"><span class="category-count">${links.length} 个入口</span>${renderEnabledToggle("category", category.id, category.name, enabled)}<button class="icon-button danger" type="button" data-category-action="delete" data-category-id="${escapeAttribute(category.id)}" title="删除分类" aria-label="删除分类：${escapeAttribute(category.name)}"><i data-lucide="trash-2" aria-hidden="true"></i></button></div></div>
+      <div class="category-heading"><div class="category-heading-main"><span class="section-number">${String(index + 1).padStart(2, "0")}</span><div><h2 id="category-${index}">${escapeHtml(category.name)}</h2><p>${escapeHtml(category.description)}</p></div></div><div class="category-heading-actions"><span class="category-count">${links.length} 个入口</span>${renderEnabledToggle("category", category.id, category.name, enabled)}<button class="icon-button" type="button" data-category-action="edit" data-category-id="${escapeAttribute(category.id)}" title="编辑分类" aria-label="编辑分类：${escapeAttribute(category.name)}"><i data-lucide="pencil" aria-hidden="true"></i></button><button class="icon-button danger" type="button" data-category-action="delete" data-category-id="${escapeAttribute(category.id)}" title="删除分类" aria-label="删除分类：${escapeAttribute(category.name)}"><i data-lucide="trash-2" aria-hidden="true"></i></button></div></div>
       <div class="link-list">${links.length ? links.map((link, linkIndex) => renderLink(link, linkIndex, links.length)).join("") : `<p class="empty-state">这个分类还没有入口。</p>`}</div>
     </section>`;
   }).join("");
@@ -153,7 +163,7 @@ function renderLink(link, index, total) {
   const enabled = isEnabled(link);
   return `<article class="link-row${enabled ? "" : " is-disabled"}" data-id="${escapeAttribute(link.id)}">
     <span class="row-mark tone-${escapeAttribute(link.tone)}">${escapeHtml(link.mark)}</span>
-    <div class="row-main"><strong>${escapeHtml(link.title)}</strong><span>${escapeHtml(link.url)}</span></div>
+    <div class="row-main"><strong>${escapeHtml(link.title)}</strong><span>${escapeHtml(link.url)}</span>${link.adminNote ? `<small class="row-admin-note" title="${escapeAttribute(link.adminNote)}">${escapeHtml(link.adminNote)}</small>` : ""}</div>
     <span class="row-status">${escapeHtml(link.status)}</span>
     <div class="row-actions">
       ${renderEnabledToggle("link", link.id, link.title, enabled)}
@@ -180,6 +190,10 @@ async function handlePanelClick(event) {
     if (!category || categoryButton.disabled) return;
     if (categoryButton.dataset.categoryAction === "toggle-enabled") {
       await toggleCategoryEnabled(category, categoryButton);
+      return;
+    }
+    if (categoryButton.dataset.categoryAction === "edit") {
+      openCategoryDialog(category);
       return;
     }
     if (categoryButton.dataset.categoryAction !== "delete") return;
@@ -254,12 +268,13 @@ async function toggleLinkEnabled(link, button) {
 function openDialog(link = null) {
   state.editingId = link?.id || null;
   document.querySelector("#dialog-title").textContent = link ? "编辑入口" : "新增入口";
-  const values = link || { category: state.categories[0]?.name || "", title: "", url: "", mark: "", status: "常用", tone: "teal", description: "", note: "" };
+  const values = link || { category: state.categories[0]?.name || "", title: "", url: "", mark: "", status: "常用", tone: "teal", description: "", note: "", adminNote: "" };
   state.categoryBeforeNew = values.category;
   populateCategoryOptions(values.category);
   ["title", "url", "category", "mark", "status", "tone", "description", "note"].forEach((field) => {
     document.querySelector(`#field-${field}`).value = values[field] || "";
   });
+  document.querySelector("#field-admin-note").value = values.adminNote || "";
   setTone(values.tone, false);
   hide("#dialog-error");
   showLinkDialog();
@@ -271,12 +286,29 @@ function handleToneSelect(event) {
   setTone(option.dataset.toneOption);
 }
 
+function handleToneKeydown(event) {
+  const options = [...document.querySelectorAll("button[data-tone-option]")];
+  const currentIndex = options.indexOf(event.target.closest("button[data-tone-option]"));
+  if (currentIndex < 0) return;
+
+  let nextIndex = currentIndex;
+  if (["ArrowRight", "ArrowDown"].includes(event.key)) nextIndex = (currentIndex + 1) % options.length;
+  else if (["ArrowLeft", "ArrowUp"].includes(event.key)) nextIndex = (currentIndex - 1 + options.length) % options.length;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = options.length - 1;
+  else return;
+
+  event.preventDefault();
+  setTone(options[nextIndex].dataset.toneOption);
+}
+
 function setTone(tone, focus = true) {
   const selectedTone = TONES.has(tone) ? tone : "teal";
   document.querySelector("#field-tone").value = selectedTone;
   document.querySelectorAll("button[data-tone-option]").forEach((option) => {
     const selected = option.dataset.toneOption === selectedTone;
     option.setAttribute("aria-checked", String(selected));
+    option.tabIndex = selected ? 0 : -1;
     option.classList.toggle("is-selected", selected);
     if (selected && focus) option.focus();
   });
@@ -306,19 +338,23 @@ function populateCategoryOptions(selected = null) {
 
 function handleCategorySelect(event) {
   if (event.target.value !== "__new__") return;
-  state.categoryReturnToLink = true;
-  closeDialog();
-  openCategoryDialog(true);
+  openCategoryDialog(null, true);
 }
 
-function openCategoryDialog(fromLink = false) {
+function openCategoryDialog(category = null, fromLink = false) {
+  state.editingCategoryId = category?.id || null;
   state.categoryReturnToLink = fromLink;
   if (fromLink) {
     const current = document.querySelector("#field-category").value;
     if (current !== "__new__") state.categoryBeforeNew = current || state.categories[0]?.name || "";
     closeDialog();
   }
-  document.querySelector("#category-form").reset();
+  const form = document.querySelector("#category-form");
+  form.reset();
+  document.querySelector("#category-dialog-title").textContent = category ? "编辑分类" : "新增分类";
+  document.querySelector("#save-category-label").textContent = category ? "保存修改" : "保存分类";
+  document.querySelector("#category-name").value = category?.name || "";
+  document.querySelector("#category-description").value = category?.description || "";
   hide("#category-dialog-error");
   const dialog = document.querySelector("#category-dialog");
   if (typeof dialog.showModal === "function") dialog.showModal();
@@ -335,6 +371,7 @@ function closeCategoryDialog(nextCategory = null) {
     state.categoryReturnToLink = false;
     showLinkDialog();
   }
+  state.editingCategoryId = null;
 }
 
 function openCategoryDeleteDialog(category) {
@@ -395,13 +432,20 @@ async function saveCategory(event) {
   const button = formElement.querySelector("button[type=submit]");
   button.disabled = true;
   try {
-    const result = await request("/admin/categories", { method: "POST", body: { name: form.get("name"), description: form.get("description") } });
-    state.categories.push(result.category);
+    const editingId = state.editingCategoryId;
+    const path = editingId ? `/admin/categories/${encodeURIComponent(editingId)}` : "/admin/categories";
+    const result = await request(path, { method: editingId ? "PUT" : "POST", body: { name: form.get("name"), description: form.get("description") } });
+    if (editingId) {
+      state.categories = state.categories.map((category) => category.id === editingId ? result.category : category);
+      state.links = result.links || state.links;
+    } else {
+      state.categories.push(result.category);
+    }
     state.categories.sort((a, b) => a.position - b.position);
     populateCategoryOptions(result.category.name);
     render();
     closeCategoryDialog(result.category.name);
-    showFlash("分类已添加。", "success");
+    showFlash(editingId ? "分类已更新。" : "分类已添加。", "success");
   } catch (error) {
     const target = document.querySelector("#category-dialog-error");
     target.textContent = error.message;
@@ -440,7 +484,7 @@ async function request(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `请求失败（${response.status}）`);
+  if (!response.ok) throw Object.assign(new Error(data.error || `请求失败（${response.status}）`), { status: response.status });
   return data;
 }
 

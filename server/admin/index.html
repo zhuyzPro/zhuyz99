@@ -17,7 +17,7 @@
       })();
     </script>
     <link rel="stylesheet" href="./admin.css" />
-    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js" defer></script>
+    <script src="./lucide.js" defer></script>
     <script src="./admin.js" defer></script>
   </head>
   <body>
@@ -83,24 +83,27 @@
           <label>地址<input id="field-url" name="url" type="url" placeholder="https://" maxlength="2048" required /></label>
           <label>分类<select id="field-category" name="category" required></select></label>
           <label>缩写<input id="field-mark" name="mark" maxlength="12" required /></label>
-          <label>状态<input id="field-status" name="status" maxlength="24" required /></label>
+          <div class="field-stack">
+            <label>状态<input id="field-status" name="status" maxlength="24" required /></label>
+            <label>后台备注（仅后台可见）<textarea id="field-admin-note" name="adminNote" maxlength="500" rows="2"></textarea></label>
+          </div>
           <div class="tone-field">
             <span id="field-tone-label" class="field-label">色调</span>
             <input id="field-tone" name="tone" type="hidden" value="teal" />
             <div id="tone-picker" class="tone-picker" role="radiogroup" aria-labelledby="field-tone-label">
-              <button class="tone-option" type="button" data-tone-option="teal" role="radio" aria-checked="true"><span class="tone-swatch tone-teal" aria-hidden="true"></span><span>青绿</span></button>
-              <button class="tone-option" type="button" data-tone-option="coral" role="radio" aria-checked="false"><span class="tone-swatch tone-coral" aria-hidden="true"></span><span>珊瑚</span></button>
-              <button class="tone-option" type="button" data-tone-option="yellow" role="radio" aria-checked="false"><span class="tone-swatch tone-yellow" aria-hidden="true"></span><span>黄色</span></button>
-              <button class="tone-option" type="button" data-tone-option="blue" role="radio" aria-checked="false"><span class="tone-swatch tone-blue" aria-hidden="true"></span><span>蓝色</span></button>
-              <button class="tone-option" type="button" data-tone-option="purple" role="radio" aria-checked="false"><span class="tone-swatch tone-purple" aria-hidden="true"></span><span>紫色</span></button>
-              <button class="tone-option" type="button" data-tone-option="orange" role="radio" aria-checked="false"><span class="tone-swatch tone-orange" aria-hidden="true"></span><span>橙色</span></button>
-              <button class="tone-option" type="button" data-tone-option="rose" role="radio" aria-checked="false"><span class="tone-swatch tone-rose" aria-hidden="true"></span><span>玫红</span></button>
-              <button class="tone-option" type="button" data-tone-option="lime" role="radio" aria-checked="false"><span class="tone-swatch tone-lime" aria-hidden="true"></span><span>青柠</span></button>
-              <button class="tone-option" type="button" data-tone-option="indigo" role="radio" aria-checked="false"><span class="tone-swatch tone-indigo" aria-hidden="true"></span><span>靛蓝</span></button>
+              <button class="tone-option" type="button" data-tone-option="teal" role="radio" aria-checked="true" tabindex="0"><span class="tone-swatch tone-teal" aria-hidden="true"></span><span>青绿</span></button>
+              <button class="tone-option" type="button" data-tone-option="coral" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-coral" aria-hidden="true"></span><span>珊瑚</span></button>
+              <button class="tone-option" type="button" data-tone-option="yellow" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-yellow" aria-hidden="true"></span><span>黄色</span></button>
+              <button class="tone-option" type="button" data-tone-option="blue" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-blue" aria-hidden="true"></span><span>蓝色</span></button>
+              <button class="tone-option" type="button" data-tone-option="purple" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-purple" aria-hidden="true"></span><span>紫色</span></button>
+              <button class="tone-option" type="button" data-tone-option="orange" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-orange" aria-hidden="true"></span><span>橙色</span></button>
+              <button class="tone-option" type="button" data-tone-option="rose" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-rose" aria-hidden="true"></span><span>玫红</span></button>
+              <button class="tone-option" type="button" data-tone-option="lime" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-lime" aria-hidden="true"></span><span>青柠</span></button>
+              <button class="tone-option" type="button" data-tone-option="indigo" role="radio" aria-checked="false" tabindex="-1"><span class="tone-swatch tone-indigo" aria-hidden="true"></span><span>靛蓝</span></button>
             </div>
           </div>
-          <label class="full-width">简介<textarea id="field-description" name="description" maxlength="240" rows="3" required></textarea></label>
-          <label class="full-width">说明<input id="field-note" name="note" maxlength="80" required /></label>
+          <label class="full-width">前台简介<textarea id="field-description" name="description" maxlength="240" rows="3" required></textarea></label>
+          <label class="full-width">前台说明<input id="field-note" name="note" maxlength="80" required /></label>
         </div>
         <p id="dialog-error" class="form-error" role="alert" hidden></p>
         <div class="dialog-actions"><button id="cancel-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存入口</span><i data-lucide="check" aria-hidden="true"></i></button></div>
@@ -118,7 +121,7 @@
           <label class="full-width">分类说明<input id="category-description" name="description" maxlength="120" placeholder="例如：工作中经常使用的服务" /></label>
         </div>
         <p id="category-dialog-error" class="form-error" role="alert" hidden></p>
-        <div class="dialog-actions"><button id="cancel-category-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存分类</span><i data-lucide="check" aria-hidden="true"></i></button></div>
+        <div class="dialog-actions"><button id="cancel-category-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span id="save-category-label">保存分类</span><i data-lucide="check" aria-hidden="true"></i></button></div>
       </form>
     </dialog>
 
