@@ -84,7 +84,21 @@
           <label>分类<select id="field-category" name="category" required></select></label>
           <label>缩写<input id="field-mark" name="mark" maxlength="12" required /></label>
           <label>状态<input id="field-status" name="status" maxlength="24" required /></label>
-          <label>色调<select id="field-tone" name="tone"><option value="teal">青绿</option><option value="coral">珊瑚</option><option value="yellow">黄色</option><option value="blue">蓝色</option><option value="purple">紫色</option><option value="orange">橙色</option><option value="rose">玫红</option><option value="lime">青柠</option><option value="indigo">靛蓝</option></select></label>
+          <div class="tone-field">
+            <span id="field-tone-label" class="field-label">色调</span>
+            <input id="field-tone" name="tone" type="hidden" value="teal" />
+            <div id="tone-picker" class="tone-picker" role="radiogroup" aria-labelledby="field-tone-label">
+              <button class="tone-option" type="button" data-tone-option="teal" role="radio" aria-checked="true"><span class="tone-swatch tone-teal" aria-hidden="true"></span><span>青绿</span></button>
+              <button class="tone-option" type="button" data-tone-option="coral" role="radio" aria-checked="false"><span class="tone-swatch tone-coral" aria-hidden="true"></span><span>珊瑚</span></button>
+              <button class="tone-option" type="button" data-tone-option="yellow" role="radio" aria-checked="false"><span class="tone-swatch tone-yellow" aria-hidden="true"></span><span>黄色</span></button>
+              <button class="tone-option" type="button" data-tone-option="blue" role="radio" aria-checked="false"><span class="tone-swatch tone-blue" aria-hidden="true"></span><span>蓝色</span></button>
+              <button class="tone-option" type="button" data-tone-option="purple" role="radio" aria-checked="false"><span class="tone-swatch tone-purple" aria-hidden="true"></span><span>紫色</span></button>
+              <button class="tone-option" type="button" data-tone-option="orange" role="radio" aria-checked="false"><span class="tone-swatch tone-orange" aria-hidden="true"></span><span>橙色</span></button>
+              <button class="tone-option" type="button" data-tone-option="rose" role="radio" aria-checked="false"><span class="tone-swatch tone-rose" aria-hidden="true"></span><span>玫红</span></button>
+              <button class="tone-option" type="button" data-tone-option="lime" role="radio" aria-checked="false"><span class="tone-swatch tone-lime" aria-hidden="true"></span><span>青柠</span></button>
+              <button class="tone-option" type="button" data-tone-option="indigo" role="radio" aria-checked="false"><span class="tone-swatch tone-indigo" aria-hidden="true"></span><span>靛蓝</span></button>
+            </div>
+          </div>
           <label class="full-width">简介<textarea id="field-description" name="description" maxlength="240" rows="3" required></textarea></label>
           <label class="full-width">说明<input id="field-note" name="note" maxlength="80" required /></label>
         </div>

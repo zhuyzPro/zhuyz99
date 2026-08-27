@@ -66,6 +66,7 @@ db.exec(`
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL,
     position INTEGER NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -80,11 +81,22 @@ db.exec(`
     note TEXT NOT NULL,
     url TEXT NOT NULL,
     position INTEGER NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS links_category_position ON links(category, position);
 `);
+
+function ensureEnabledColumn(table) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((column) => column.name === "enabled")) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1`);
+  }
+}
+
+ensureEnabledColumn("categories");
+ensureEnabledColumn("links");
 
 const categoryInsert = db.prepare(`
   INSERT OR IGNORE INTO categories (id, name, description, position, created_at, updated_at)
@@ -261,8 +273,27 @@ function textField(value, name, { required = true, max = 240 } = {}) {
   return text;
 }
 
+function enabledField(value) {
+  if (typeof value !== "boolean") throw Object.assign(new Error("启用状态必须是布尔值"), { status: 400 });
+  return value;
+}
+
+function toCategory(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    position: row.position,
+    enabled: Number(row.enabled) === 1,
+  };
+}
+
 function getCategories() {
-  return db.prepare("SELECT id, name, description, position FROM categories ORDER BY position, name COLLATE NOCASE").all();
+  return db.prepare("SELECT id, name, description, position, enabled FROM categories ORDER BY position, name COLLATE NOCASE").all().map(toCategory);
+}
+
+function getPublicCategories() {
+  return db.prepare("SELECT id, name, description, position, enabled FROM categories WHERE enabled = 1 ORDER BY position, name COLLATE NOCASE").all().map(toCategory);
 }
 
 function getCategoryNames() {
@@ -302,12 +333,17 @@ function toLink(row) {
     note: row.note,
     url: row.url,
     position: row.position,
+    enabled: Number(row.enabled) === 1,
     updatedAt: row.updated_at,
   };
 }
 
 function getAllLinks() {
   return db.prepare("SELECT links.* FROM links LEFT JOIN categories ON categories.name = links.category ORDER BY categories.position, links.position, links.title COLLATE NOCASE").all().map(toLink);
+}
+
+function getPublicLinks() {
+  return db.prepare("SELECT links.* FROM links INNER JOIN categories ON categories.name = links.category WHERE links.enabled = 1 AND categories.enabled = 1 ORDER BY categories.position, links.position, links.title COLLATE NOCASE").all().map(toLink);
 }
 
 function getLink(id) {
@@ -368,10 +404,22 @@ function handleAdminCategory(req, res) {
     if (duplicate) throw Object.assign(new Error("这个分类已经存在"), { status: 409 });
     const now = new Date().toISOString();
     const position = Number(db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS position FROM categories").get().position);
-    const category = { id: `category-${crypto.randomUUID()}`, name, description, position, created_at: now, updated_at: now };
+    const category = { id: `category-${crypto.randomUUID()}`, name, description, position, enabled: true, created_at: now, updated_at: now };
     db.prepare("INSERT INTO categories (id, name, description, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run(category.id, category.name, category.description, category.position, category.created_at, category.updated_at);
-    return sendJson(res, 201, { category: { id: category.id, name: category.name, description: category.description, position: category.position } });
+    return sendJson(res, 201, { category: toCategory(category) });
+  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+}
+
+function handleAdminCategoryEnabled(req, res, id) {
+  if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
+  return readJson(req).then((body) => {
+    const enabled = enabledField(body.enabled);
+    const category = db.prepare("SELECT id, name, description, position, enabled FROM categories WHERE id = ?").get(id);
+    if (!category) return sendJson(res, 404, { error: "分类不存在" });
+    const now = new Date().toISOString();
+    db.prepare("UPDATE categories SET enabled = ?, updated_at = ? WHERE id = ?").run(enabled ? 1 : 0, now, id);
+    return sendJson(res, 200, { category: toCategory({ ...category, enabled: enabled ? 1 : 0 }) });
   }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
 }
 
@@ -413,7 +461,7 @@ function handleAdminLink(req, res, method, id) {
     if (method === "POST") {
       const link = normalizeLink(body);
       const now = new Date().toISOString();
-      const created = { id: crypto.randomUUID(), ...link, position: nextPosition(link.category), created_at: now, updated_at: now };
+      const created = { id: crypto.randomUUID(), ...link, position: nextPosition(link.category), enabled: true, created_at: now, updated_at: now };
       db.prepare(`INSERT INTO links (id, category, title, mark, tone, status, description, note, url, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(created.id, created.category, created.title, created.mark, created.tone, created.status, created.description, created.note, created.url, created.position, created.created_at, created.updated_at);
       return sendJson(res, 201, { link: toLink(created) });
@@ -430,6 +478,18 @@ function handleAdminLink(req, res, method, id) {
     db.prepare(`UPDATE links SET category = ?, title = ?, mark = ?, tone = ?, status = ?, description = ?, note = ?, url = ?, position = ?, updated_at = ? WHERE id = ?`)
       .run(link.category, link.title, link.mark, link.tone, link.status, link.description, link.note, link.url, position, now, id);
     return sendJson(res, 200, { link: toLink({ ...existing, ...link, id, position, updated_at: now }) });
+  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
+}
+
+function handleAdminLinkEnabled(req, res, id) {
+  if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
+  return readJson(req).then((body) => {
+    const enabled = enabledField(body.enabled);
+    const existing = getLink(id);
+    if (!existing) return sendJson(res, 404, { error: "入口不存在" });
+    const now = new Date().toISOString();
+    db.prepare("UPDATE links SET enabled = ?, updated_at = ? WHERE id = ?").run(enabled ? 1 : 0, now, id);
+    return sendJson(res, 200, { link: { ...existing, enabled, updatedAt: now } });
   }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
 }
 
@@ -451,7 +511,7 @@ const server = http.createServer((req, res) => {
   if (pathname.startsWith("/api/")) applyCors(req, res);
   if (req.method === "OPTIONS" && pathname.startsWith("/api/")) return res.writeHead(204).end();
   if (pathname === "/api/health" && req.method === "GET") return sendJson(res, 200, { ok: true, service: "wayfind-admin" });
-  if (pathname === "/api/public/links" && req.method === "GET") return sendJson(res, 200, { categories: getCategories(), links: getAllLinks() });
+  if (pathname === "/api/public/links" && req.method === "GET") return sendJson(res, 200, { categories: getPublicCategories(), links: getPublicLinks() });
   if (pathname === "/api/auth/login" && req.method === "POST") return handleLogin(req, res);
   if (pathname === "/api/auth/logout" && req.method === "POST") {
     const session = getSession(req);
@@ -470,6 +530,11 @@ const server = http.createServer((req, res) => {
     if (!requireSession(req, res)) return;
     return handleAdminCategory(req, res);
   }
+  const categoryEnabledMatch = pathname.match(/^\/api\/admin\/categories\/([^/]+)\/enabled$/);
+  if (categoryEnabledMatch && req.method === "PATCH") {
+    if (!requireSession(req, res)) return;
+    return handleAdminCategoryEnabled(req, res, categoryEnabledMatch[1]);
+  }
   const categoryMatch = pathname.match(/^\/api\/admin\/categories\/([^/]+)$/);
   if (categoryMatch && req.method === "DELETE") {
     if (!requireSession(req, res)) return;
@@ -478,6 +543,11 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/admin/links" && req.method === "POST") {
     if (!requireSession(req, res)) return;
     return handleAdminLink(req, res, "POST");
+  }
+  const linkEnabledMatch = pathname.match(/^\/api\/admin\/links\/([^/]+)\/enabled$/);
+  if (linkEnabledMatch && req.method === "PATCH") {
+    if (!requireSession(req, res)) return;
+    return handleAdminLinkEnabled(req, res, linkEnabledMatch[1]);
   }
   const linkMatch = pathname.match(/^\/api\/admin\/links\/([^/]+)$/);
   if (linkMatch && ["PUT", "DELETE"].includes(req.method)) {

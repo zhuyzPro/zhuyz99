@@ -1,5 +1,6 @@
 const API_BASE = window.location.pathname.startsWith("/wayfind-admin") ? "/wayfind-api" : "/api";
 const THEME_STORAGE_KEY = "wayfind-admin-theme";
+const TONES = new Set(["coral", "teal", "yellow", "blue", "purple", "orange", "rose", "lime", "indigo"]);
 const state = { categories: [], links: [], editingId: null, categoryBeforeNew: "", categoryReturnToLink: false, pendingCategoryDelete: null };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -69,6 +70,7 @@ function bindEvents() {
   document.querySelector("#add-category-button").addEventListener("click", () => openCategoryDialog(false));
   document.querySelector("#category-panels").addEventListener("click", handlePanelClick);
   document.querySelector("#field-category").addEventListener("change", handleCategorySelect);
+  document.querySelector("#tone-picker").addEventListener("click", handleToneSelect);
   document.querySelector("#link-form").addEventListener("submit", saveLink);
   document.querySelector("#close-dialog").addEventListener("click", closeDialog);
   document.querySelector("#cancel-dialog").addEventListener("click", closeDialog);
@@ -138,8 +140,9 @@ function render() {
   const container = document.querySelector("#category-panels");
   container.innerHTML = state.categories.map((category, index) => {
     const links = state.links.filter((link) => link.category === category.name).sort((a, b) => a.position - b.position);
-    return `<section class="category-panel" aria-labelledby="category-${index}">
-      <div class="category-heading"><div class="category-heading-main"><span class="section-number">${String(index + 1).padStart(2, "0")}</span><div><h2 id="category-${index}">${escapeHtml(category.name)}</h2><p>${escapeHtml(category.description)}</p></div></div><div class="category-heading-actions"><span class="category-count">${links.length} 个入口</span><button class="icon-button danger" type="button" data-category-action="delete" data-category-id="${escapeAttribute(category.id)}" title="删除分类" aria-label="删除分类：${escapeAttribute(category.name)}"><i data-lucide="trash-2" aria-hidden="true"></i></button></div></div>
+    const enabled = isEnabled(category);
+    return `<section class="category-panel${enabled ? "" : " is-disabled"}" aria-labelledby="category-${index}">
+      <div class="category-heading"><div class="category-heading-main"><span class="section-number">${String(index + 1).padStart(2, "0")}</span><div><h2 id="category-${index}">${escapeHtml(category.name)}</h2><p>${escapeHtml(category.description)}</p></div></div><div class="category-heading-actions"><span class="category-count">${links.length} 个入口</span>${renderEnabledToggle("category", category.id, category.name, enabled)}<button class="icon-button danger" type="button" data-category-action="delete" data-category-id="${escapeAttribute(category.id)}" title="删除分类" aria-label="删除分类：${escapeAttribute(category.name)}"><i data-lucide="trash-2" aria-hidden="true"></i></button></div></div>
       <div class="link-list">${links.length ? links.map((link, linkIndex) => renderLink(link, linkIndex, links.length)).join("") : `<p class="empty-state">这个分类还没有入口。</p>`}</div>
     </section>`;
   }).join("");
@@ -147,11 +150,13 @@ function render() {
 }
 
 function renderLink(link, index, total) {
-  return `<article class="link-row" data-id="${escapeAttribute(link.id)}">
+  const enabled = isEnabled(link);
+  return `<article class="link-row${enabled ? "" : " is-disabled"}" data-id="${escapeAttribute(link.id)}">
     <span class="row-mark tone-${escapeAttribute(link.tone)}">${escapeHtml(link.mark)}</span>
     <div class="row-main"><strong>${escapeHtml(link.title)}</strong><span>${escapeHtml(link.url)}</span></div>
     <span class="row-status">${escapeHtml(link.status)}</span>
     <div class="row-actions">
+      ${renderEnabledToggle("link", link.id, link.title, enabled)}
       <button class="icon-button" type="button" data-action="up" title="上移" aria-label="上移" ${index === 0 ? "disabled" : ""}><i data-lucide="arrow-up" aria-hidden="true"></i></button>
       <button class="icon-button" type="button" data-action="down" title="下移" aria-label="下移" ${index === total - 1 ? "disabled" : ""}><i data-lucide="arrow-down" aria-hidden="true"></i></button>
       <button class="icon-button" type="button" data-action="edit" title="编辑" aria-label="编辑"><i data-lucide="pencil" aria-hidden="true"></i></button>
@@ -160,11 +165,24 @@ function renderLink(link, index, total) {
   </article>`;
 }
 
+function renderEnabledToggle(type, id, name, enabled) {
+  const targetName = type === "category" ? "分类" : "入口";
+  const nextAction = enabled ? "关闭" : "开启";
+  const label = enabled ? "已开启" : "已关闭";
+  const actionAttribute = type === "category" ? "data-category-action" : "data-action";
+  return `<button class="status-toggle" type="button" ${actionAttribute}="toggle-enabled" data-${type}-id="${escapeAttribute(id)}" role="switch" aria-checked="${enabled}" aria-label="${nextAction}${targetName}：${escapeAttribute(name)}" title="${nextAction}${targetName}"><span class="status-toggle-track" aria-hidden="true"></span><span class="status-toggle-label">${label}</span></button>`;
+}
+
 async function handlePanelClick(event) {
   const categoryButton = event.target.closest("button[data-category-action]");
   if (categoryButton) {
     const category = state.categories.find((item) => item.id === categoryButton.dataset.categoryId);
     if (!category || categoryButton.disabled) return;
+    if (categoryButton.dataset.categoryAction === "toggle-enabled") {
+      await toggleCategoryEnabled(category, categoryButton);
+      return;
+    }
+    if (categoryButton.dataset.categoryAction !== "delete") return;
     openCategoryDeleteDialog(category);
     return;
   }
@@ -173,6 +191,10 @@ async function handlePanelClick(event) {
   const row = button.closest("[data-id]");
   const link = state.links.find((item) => item.id === row?.dataset.id);
   if (!link) return;
+  if (button.dataset.action === "toggle-enabled") {
+    await toggleLinkEnabled(link, button);
+    return;
+  }
   if (button.dataset.action === "edit") return openDialog(link);
   if (button.dataset.action === "delete") {
     if (!window.confirm(`确定删除“${link.title}”吗？`)) return;
@@ -197,6 +219,38 @@ async function handlePanelClick(event) {
   } catch (error) { showFlash(error.message, "error"); }
 }
 
+async function toggleCategoryEnabled(category, button) {
+  const enabled = !isEnabled(category);
+  button.disabled = true;
+  try {
+    const result = await request(`/admin/categories/${encodeURIComponent(category.id)}/enabled`, { method: "PATCH", body: { enabled } });
+    const updatedCategory = result.category ? { ...category, ...result.category } : { ...category, enabled };
+    state.categories = state.categories.map((item) => item.id === category.id ? updatedCategory : item);
+    render();
+    showFlash(enabled ? `分类“${updatedCategory.name}”已开启。` : `分类“${updatedCategory.name}”已关闭。`, "success");
+  } catch (error) {
+    showFlash(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function toggleLinkEnabled(link, button) {
+  const enabled = !isEnabled(link);
+  button.disabled = true;
+  try {
+    const result = await request(`/admin/links/${encodeURIComponent(link.id)}/enabled`, { method: "PATCH", body: { enabled } });
+    const updatedLink = result.link ? { ...link, ...result.link } : { ...link, enabled };
+    state.links = state.links.map((item) => item.id === link.id ? updatedLink : item);
+    render();
+    showFlash(enabled ? `入口“${updatedLink.title}”已开启。` : `入口“${updatedLink.title}”已关闭。`, "success");
+  } catch (error) {
+    showFlash(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function openDialog(link = null) {
   state.editingId = link?.id || null;
   document.querySelector("#dialog-title").textContent = link ? "编辑入口" : "新增入口";
@@ -206,8 +260,26 @@ function openDialog(link = null) {
   ["title", "url", "category", "mark", "status", "tone", "description", "note"].forEach((field) => {
     document.querySelector(`#field-${field}`).value = values[field] || "";
   });
+  setTone(values.tone, false);
   hide("#dialog-error");
   showLinkDialog();
+}
+
+function handleToneSelect(event) {
+  const option = event.target.closest("button[data-tone-option]");
+  if (!option) return;
+  setTone(option.dataset.toneOption);
+}
+
+function setTone(tone, focus = true) {
+  const selectedTone = TONES.has(tone) ? tone : "teal";
+  document.querySelector("#field-tone").value = selectedTone;
+  document.querySelectorAll("button[data-tone-option]").forEach((option) => {
+    const selected = option.dataset.toneOption === selectedTone;
+    option.setAttribute("aria-checked", String(selected));
+    option.classList.toggle("is-selected", selected);
+    if (selected && focus) option.focus();
+  });
 }
 
 function closeDialog() {
@@ -376,5 +448,6 @@ function showLoginError(message) { const target = document.querySelector("#login
 function showFlash(message, type) { const target = document.querySelector("#flash"); target.textContent = message; target.className = `flash ${type}`; target.hidden = false; window.clearTimeout(showFlash.timer); showFlash.timer = window.setTimeout(() => { target.hidden = true; }, 3200); }
 function hide(selector) { document.querySelector(selector).hidden = true; }
 function refreshIcons() { if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } }); }
+function isEnabled(item) { return item?.enabled !== false; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]); }
 function escapeAttribute(value) { return escapeHtml(value); }

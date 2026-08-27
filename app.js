@@ -255,11 +255,12 @@ function renderSection(section, allLinks, index) {
 
 function renderCard(link) {
   const url = normalizeUrl(link.url);
-  return `<article class="link-card tone-${escapeAttribute(link.tone || "teal")}">
+  const title = escapeHtml(link.title);
+  return `<a class="link-card tone-${escapeAttribute(link.tone || "teal")}" href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer" aria-label="打开 ${escapeAttribute(link.title)}（新标签页）">
     <div class="card-topline">
       <div class="card-identity">
         <span class="link-mark" aria-hidden="true">${escapeHtml(link.mark)}</span>
-        <h3><a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer"><span class="card-title-text">${escapeHtml(link.title)}</span><i data-lucide="arrow-up-right" aria-hidden="true"></i></a></h3>
+        <h3><span class="card-title-text">${title}</span><i data-lucide="arrow-up-right" aria-hidden="true"></i></h3>
       </div>
       <span class="status-badge">${escapeHtml(link.status)}</span>
     </div>
@@ -268,7 +269,7 @@ function renderCard(link) {
       <span>${escapeHtml(link.note)}</span>
       <span>${escapeHtml(getHost(url))}</span>
     </div>
-  </article>`;
+  </a>`;
 }
 
 function normalizeUrl(value) {
