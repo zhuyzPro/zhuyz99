@@ -155,8 +155,10 @@ const LINKS = [
 ];
 
 const PUBLIC_API_URL = "https://zhuyz.art/wayfind-api/public/links";
+const THEME_STORAGE_KEY = "wayfind-theme";
 
 document.addEventListener("DOMContentLoaded", async () => {
+  initializeTheme();
   const container = document.querySelector("#link-sections");
   if (!container) return;
   const data = await loadNavigationData();
@@ -164,6 +166,48 @@ document.addEventListener("DOMContentLoaded", async () => {
   container.innerHTML = data.categories.map((section, index) => renderSection(section, data.links, index)).join("");
   refreshIcons();
 });
+
+function initializeTheme() {
+  const savedTheme = readStoredTheme();
+  applyTheme(savedTheme === "light" ? "light" : "dark", false);
+
+  const toggle = document.querySelector("#theme-toggle");
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    applyTheme(currentTheme === "light" ? "dark" : "light");
+  });
+}
+
+function readStoredTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function applyTheme(theme, persist = true) {
+  const normalizedTheme = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = normalizedTheme;
+
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+    } catch {
+      // The visual switch still works when storage is unavailable.
+    }
+  }
+
+  const toggle = document.querySelector("#theme-toggle");
+  if (!toggle) return;
+  const isLight = normalizedTheme === "light";
+  const nextLabel = isLight ? "切换深色模式" : "切换浅色模式";
+  toggle.innerHTML = `<i data-lucide="${isLight ? "sun" : "moon"}" aria-hidden="true"></i>`;
+  toggle.title = nextLabel;
+  toggle.setAttribute("aria-label", nextLabel);
+  refreshIcons();
+}
 
 async function loadNavigationData() {
   try {

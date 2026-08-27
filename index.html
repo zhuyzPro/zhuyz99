@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="航迹：中转站与其他常用网站导航。" />
     <title>航迹 · 网站导航</title>
+    <script>
+      (() => {
+        try {
+          if (localStorage.getItem("wayfind-theme") === "light") {
+            document.documentElement.dataset.theme = "light";
+          }
+        } catch {
+          // Storage can be unavailable in privacy-restricted browsers.
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="styles.css" />
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.js" defer></script>
     <script src="app.js" defer></script>
@@ -46,5 +57,9 @@
         <span>链接与状态以目标站点为准</span>
       </footer>
     </div>
+
+    <button id="theme-toggle" class="theme-toggle" type="button" title="切换浅色模式" aria-label="切换浅色模式">
+      <i data-lucide="moon" aria-hidden="true"></i>
+    </button>
   </body>
 </html>

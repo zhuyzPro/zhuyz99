@@ -91,6 +91,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .tone-yellow { border-color: rgba(242, 200, 107, .4); color: #f2c86b; }
 .tone-blue { border-color: rgba(139, 185, 244, .4); color: #8bb9f4; }
 .tone-purple { border-color: rgba(192, 164, 255, .4); color: #c0a4ff; }
+.tone-orange { border-color: rgba(244, 162, 97, .4); color: #f4a261; }
+.tone-rose { border-color: rgba(255, 135, 170, .4); color: #ff87aa; }
+.tone-lime { border-color: rgba(182, 220, 114, .4); color: #b6dc72; }
+.tone-indigo { border-color: rgba(167, 174, 255, .4); color: #a7aeff; }
 .row-main { min-width: 0; display: grid; gap: 3px; }
 .row-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .86rem; }
 .row-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: .7rem; }

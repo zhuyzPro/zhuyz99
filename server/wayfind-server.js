@@ -19,12 +19,25 @@ const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toSt
 const COOKIE_SECURE = process.env.COOKIE_SECURE !== "false";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_BODY_BYTES = 1024 * 1024;
+const PUBLIC_ORIGINS = new Set(
+  [
+    process.env.PUBLIC_ORIGINS,
+    process.env.PUBLIC_ORIGIN,
+    "https://zhuyzpro.github.io",
+    "https://zhuyz.cloud",
+    "http://127.0.0.1:4173",
+    "http://localhost:4173",
+  ]
+    .flatMap((value) => String(value || "").split(","))
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
 
 const DEFAULT_CATEGORIES = [
   { id: "relay", name: "中转站", description: "模型聚合、API 与中转服务" },
   { id: "other", name: "其他", description: "日常使用的工具与网站" },
 ];
-const TONES = new Set(["coral", "teal", "yellow", "blue", "purple"]);
+const TONES = new Set(["coral", "teal", "yellow", "blue", "purple", "orange", "rose", "lime", "indigo"]);
 
 const SEED_LINKS = [
   ["中转站", "OpenRouter", "OR", "coral", "推荐", "多模型统一入口，按需切换模型和供应商。", "模型聚合 · API", "https://openrouter.ai/"],
@@ -147,12 +160,7 @@ function sendText(res, status, body, contentType = "text/plain; charset=utf-8") 
 
 function applyCors(req, res) {
   const origin = req.headers.origin;
-  const allowed = new Set([
-    process.env.PUBLIC_ORIGIN || "https://zhuyzpro.github.io",
-    "http://127.0.0.1:4173",
-    "http://localhost:4173",
-  ]);
-  if (origin && allowed.has(origin)) {
+  if (origin && PUBLIC_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Accept, Content-Type, X-CSRF-Token");
