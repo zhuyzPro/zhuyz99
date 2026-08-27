@@ -19,9 +19,11 @@
         </a>
         <div class="header-actions">
           <span id="session-user" class="session-user" hidden></span>
-          <a class="front-link" href="https://zhuyzpro.github.io/zhuyz99/" target="_blank" rel="noopener noreferrer" title="打开前台">
+          <span id="front-divider" class="header-divider" aria-hidden="true" hidden></span>
+          <a id="front-link" class="front-link" href="https://zhuyzpro.github.io/zhuyz99/" target="_blank" rel="noopener noreferrer" title="打开前台" hidden>
             <i data-lucide="external-link" aria-hidden="true"></i><span>进入前台</span>
           </a>
+          <span id="logout-divider" class="header-divider" aria-hidden="true" hidden></span>
           <button id="logout-button" class="icon-button" type="button" title="退出登录" aria-label="退出登录" hidden>
             <i data-lucide="log-out" aria-hidden="true"></i>
           </button>
@@ -92,6 +94,19 @@
         </div>
         <p id="category-dialog-error" class="form-error" role="alert" hidden></p>
         <div class="dialog-actions"><button id="cancel-category-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存分类</span><i data-lucide="check" aria-hidden="true"></i></button></div>
+      </form>
+    </dialog>
+
+    <dialog id="category-delete-dialog" class="link-dialog" aria-labelledby="category-delete-title">
+      <form id="category-delete-form" method="dialog">
+        <div class="dialog-header">
+          <div><p class="eyebrow">CATEGORY ACTION</p><h2 id="category-delete-title">删除分类</h2></div>
+          <button id="close-category-delete-dialog" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <p id="category-delete-message" class="delete-message"></p>
+        <label id="category-target-label">将入口移动到<select id="category-target" name="targetCategoryId" required></select></label>
+        <p id="category-delete-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="cancel-category-delete-dialog" class="secondary-button" type="button">取消</button><button class="danger-button" type="submit"><i data-lucide="trash-2" aria-hidden="true"></i><span>删除分类</span></button></div>
       </form>
     </dialog>
   </body>

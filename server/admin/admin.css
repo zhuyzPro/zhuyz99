@@ -30,11 +30,13 @@ button { -webkit-tap-highlight-color: transparent; }
 .brand-copy { display: flex; flex-direction: column; gap: 1px; line-height: 1; }
 .brand-copy strong { font-size: 1rem; font-weight: 800; letter-spacing: .08em; }
 .brand-copy small { color: var(--faint); font-size: .56rem; font-weight: 700; letter-spacing: .2em; }
-.header-actions { display: flex; align-items: center; gap: 12px; }
+.header-actions { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
 .session-user { color: var(--muted); font-size: .78rem; }
+.header-divider { width: 1px; height: 22px; background: var(--line-strong); }
 .front-link { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .78rem; text-decoration: none; }
 .front-link:hover, .front-link:focus-visible { color: var(--text); }
 .front-link svg { width: 15px; height: 15px; }
+.front-link[hidden], .header-divider[hidden], #logout-button[hidden] { display: none; }
 .icon-button { display: inline-grid; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
 .icon-button:hover:not(:disabled), .icon-button:focus-visible:not(:disabled) { border-color: var(--line-strong); background: var(--surface); color: var(--text); }
 .icon-button:disabled { cursor: not-allowed; opacity: .3; }
@@ -56,6 +58,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .primary-button { border: 1px solid var(--teal); background: var(--teal); color: #06201d; }
 .primary-button:hover:not(:disabled), .primary-button:focus-visible:not(:disabled) { background: #89e9da; border-color: #89e9da; }
 .primary-button:disabled { cursor: wait; opacity: .55; }
+.danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 14px; border: 1px solid var(--coral); border-radius: 6px; background: var(--coral); color: #260b08; font-size: .79rem; font-weight: 750; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
+.danger-button:hover:not(:disabled), .danger-button:focus-visible:not(:disabled) { border-color: #ff9b8d; background: #ff9b8d; }
+.danger-button:disabled { cursor: wait; opacity: .55; }
+.danger-button svg { width: 15px; height: 15px; }
 .secondary-button { border: 1px solid var(--line-strong); background: transparent; color: var(--muted); }
 .secondary-button:hover, .secondary-button:focus-visible { border-color: var(--text); color: var(--text); }
 .primary-button svg { width: 15px; height: 15px; }
@@ -91,6 +97,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .row-status { color: var(--muted); font-size: .7rem; white-space: nowrap; }
 .row-actions { display: flex; gap: 2px; }
 .empty-state { margin: 0; padding: 24px 14px; color: var(--faint); font-size: .78rem; }
+.delete-message { margin: 0 0 18px; color: var(--muted); font-size: .84rem; line-height: 1.65; }
 .link-dialog { width: min(680px, calc(100% - 28px)); padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: 0 24px 80px rgba(0,0,0,.48); }
 .link-dialog::backdrop { background: rgba(0, 7, 12, .72); }
 .link-dialog form { padding: 23px; }

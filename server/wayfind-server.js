@@ -369,13 +369,34 @@ function handleAdminCategory(req, res) {
 
 function handleAdminCategoryDelete(req, res, id) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
-  const category = db.prepare("SELECT id, name FROM categories WHERE id = ?").get(id);
-  if (!category) return sendJson(res, 404, { error: "分类不存在" });
-  if (getCategories().length <= 1) return sendJson(res, 400, { error: "至少需要保留一个分类" });
-  const count = Number(db.prepare("SELECT COUNT(*) AS count FROM links WHERE category = ?").get(category.name).count);
-  if (count > 0) return sendJson(res, 409, { error: `该分类还有 ${count} 个入口，请先移动或删除入口` });
-  db.prepare("DELETE FROM categories WHERE id = ?").run(id);
-  return sendJson(res, 200, { ok: true, categories: getCategories() });
+  return readJson(req).then((body) => {
+    const category = db.prepare("SELECT id, name FROM categories WHERE id = ?").get(id);
+    if (!category) return sendJson(res, 404, { error: "分类不存在" });
+    const categories = getCategories();
+    if (categories.length <= 1) return sendJson(res, 400, { error: "至少需要保留一个分类" });
+    const count = Number(db.prepare("SELECT COUNT(*) AS count FROM links WHERE category = ?").get(category.name).count);
+    const targetId = String(body.targetCategoryId || "").trim();
+    const target = targetId ? categories.find((item) => item.id === targetId) : null;
+    if (targetId && (!target || target.id === category.id)) return sendJson(res, 400, { error: "移动目标分类不正确" });
+    if (count > 0 && !target) return sendJson(res, 409, { error: `该分类还有 ${count} 个入口，请选择要移动到的分类` });
+
+    const now = new Date().toISOString();
+    db.exec("BEGIN");
+    try {
+      if (count > 0) {
+        const startPosition = nextPosition(target.name);
+        const update = db.prepare("UPDATE links SET category = ?, position = ?, updated_at = ? WHERE id = ?");
+        const links = db.prepare("SELECT id FROM links WHERE category = ? ORDER BY position, title COLLATE NOCASE").all(category.name);
+        links.forEach((link, index) => update.run(target.name, startPosition + index, now, link.id));
+      }
+      db.prepare("DELETE FROM categories WHERE id = ?").run(id);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    return sendJson(res, 200, { ok: true, categories: getCategories(), links: getAllLinks() });
+  }).catch((error) => sendJson(res, error.status || 400, { error: error.message }));
 }
 
 function handleAdminLink(req, res, method, id) {

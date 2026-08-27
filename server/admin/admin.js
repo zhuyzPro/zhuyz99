@@ -1,5 +1,5 @@
 const API_BASE = window.location.pathname.startsWith("/wayfind-admin") ? "/wayfind-api" : "/api";
-const state = { categories: [], links: [], editingId: null, categoryBeforeNew: "", categoryReturnToLink: false };
+const state = { categories: [], links: [], editingId: null, categoryBeforeNew: "", categoryReturnToLink: false, pendingCategoryDelete: null };
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
@@ -31,6 +31,9 @@ function bindEvents() {
   document.querySelector("#category-form").addEventListener("submit", saveCategory);
   document.querySelector("#close-category-dialog").addEventListener("click", closeCategoryDialog);
   document.querySelector("#cancel-category-dialog").addEventListener("click", closeCategoryDialog);
+  document.querySelector("#category-delete-form").addEventListener("submit", deleteCategory);
+  document.querySelector("#close-category-delete-dialog").addEventListener("click", closeCategoryDeleteDialog);
+  document.querySelector("#cancel-category-delete-dialog").addEventListener("click", closeCategoryDeleteDialog);
 }
 
 async function login(event) {
@@ -59,6 +62,9 @@ async function logout() {
 async function showDashboard(username) {
   document.querySelector("#session-user").textContent = username;
   document.querySelector("#session-user").hidden = false;
+  document.querySelector("#front-link").hidden = false;
+  document.querySelector("#front-divider").hidden = false;
+  document.querySelector("#logout-divider").hidden = false;
   document.querySelector("#logout-button").hidden = false;
   document.querySelector("#login-view").hidden = true;
   document.querySelector("#dashboard-view").hidden = false;
@@ -74,6 +80,9 @@ async function showDashboard(username) {
 
 function showLogin() {
   document.querySelector("#session-user").hidden = true;
+  document.querySelector("#front-link").hidden = true;
+  document.querySelector("#front-divider").hidden = true;
+  document.querySelector("#logout-divider").hidden = true;
   document.querySelector("#logout-button").hidden = true;
   document.querySelector("#dashboard-view").hidden = true;
   document.querySelector("#login-view").hidden = false;
@@ -112,14 +121,7 @@ async function handlePanelClick(event) {
   if (categoryButton) {
     const category = state.categories.find((item) => item.id === categoryButton.dataset.categoryId);
     if (!category || categoryButton.disabled) return;
-    const linkCount = state.links.filter((link) => link.category === category.name).length;
-    if (!window.confirm(`确定删除分类“${category.name}”吗？${linkCount ? `\n该分类还有 ${linkCount} 个入口，删除会被拒绝。` : ""}`)) return;
-    try {
-      await request(`/admin/categories/${encodeURIComponent(category.id)}`, { method: "DELETE" });
-      state.categories = state.categories.filter((item) => item.id !== category.id);
-      render();
-      showFlash("分类已删除。", "success");
-    } catch (error) { showFlash(error.message, "error"); }
+    openCategoryDeleteDialog(category);
     return;
   }
   const button = event.target.closest("button[data-action]");
@@ -217,6 +219,56 @@ function closeCategoryDialog(nextCategory = null) {
     state.categoryReturnToLink = false;
     showLinkDialog();
   }
+}
+
+function openCategoryDeleteDialog(category) {
+  state.pendingCategoryDelete = category;
+  const linkCount = state.links.filter((link) => link.category === category.name).length;
+  const targetLabel = document.querySelector("#category-target-label");
+  const target = document.querySelector("#category-target");
+  const choices = state.categories.filter((item) => item.id !== category.id);
+  target.innerHTML = choices.map((item) => `<option value="${escapeAttribute(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+  target.required = linkCount > 0;
+  targetLabel.hidden = linkCount === 0;
+  document.querySelector("#category-delete-message").textContent = linkCount > 0
+    ? `“${category.name}”中有 ${linkCount} 个入口。删除分类前，请先选择一个分类接收这些入口。`
+    : `确定删除空分类“${category.name}”吗？`;
+  hide("#category-delete-error");
+  const dialog = document.querySelector("#category-delete-dialog");
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function closeCategoryDeleteDialog() {
+  const dialog = document.querySelector("#category-delete-dialog");
+  if (typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
+  state.pendingCategoryDelete = null;
+}
+
+async function deleteCategory(event) {
+  event.preventDefault();
+  const category = state.pendingCategoryDelete;
+  if (!category) return;
+  hide("#category-delete-error");
+  const targetId = document.querySelector("#category-target").value;
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const result = await request(`/admin/categories/${encodeURIComponent(category.id)}`, {
+      method: "DELETE",
+      body: targetId ? { targetCategoryId: targetId } : undefined,
+    });
+    state.categories = result.categories || state.categories.filter((item) => item.id !== category.id);
+    state.links = result.links || state.links.filter((link) => link.category !== category.name);
+    closeCategoryDeleteDialog();
+    render();
+    showFlash("分类已删除。", "success");
+  } catch (error) {
+    const target = document.querySelector("#category-delete-error");
+    target.textContent = error.message;
+    target.hidden = false;
+  } finally { button.disabled = false; }
 }
 
 async function saveCategory(event) {
