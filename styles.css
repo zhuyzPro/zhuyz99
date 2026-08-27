@@ -288,35 +288,70 @@ h1 {
 
 .section-nav {
   display: flex;
-  gap: 7px;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 52px;
-  padding: 0 0 13px;
+  padding: 0 0 16px;
   border-bottom: 1px solid var(--line);
 }
 
 .section-nav a {
+  --nav-tone: var(--teal);
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 8px 13px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 0.81rem;
+  gap: 10px;
+  min-width: 128px;
+  min-height: 44px;
+  padding: 10px 17px 11px;
+  border: 1px solid color-mix(in srgb, var(--nav-tone) 32%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--nav-tone) 8%, var(--surface));
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--nav-tone) 8%, transparent);
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
   text-decoration: none;
-  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
+
+.section-nav a::after {
+  position: absolute;
+  right: 14px;
+  bottom: -1px;
+  left: 14px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--nav-tone), transparent);
+  content: "";
+  opacity: 0.85;
+}
+
+.section-nav a:nth-child(2) { --nav-tone: var(--coral); }
+.section-nav a:nth-child(3) { --nav-tone: var(--blue); }
+.section-nav a:nth-child(4) { --nav-tone: var(--purple); }
+.section-nav a:nth-child(5) { --nav-tone: var(--yellow); }
 
 .section-nav a:hover,
 .section-nav a:focus-visible {
-  border-color: var(--line-strong);
-  background: var(--surface);
+  border-color: color-mix(in srgb, var(--nav-tone) 68%, var(--line-strong));
+  background: color-mix(in srgb, var(--nav-tone) 15%, var(--surface-hover));
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--nav-tone) 15%, transparent);
   color: var(--text);
+  transform: translateY(-2px);
 }
 
 .nav-index {
-  color: var(--coral);
-  font-size: 0.64rem;
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--nav-tone) 38%, var(--line));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--nav-tone) 13%, transparent);
+  color: var(--nav-tone);
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
