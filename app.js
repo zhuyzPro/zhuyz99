@@ -257,10 +257,12 @@ function renderCard(link) {
   const url = normalizeUrl(link.url);
   return `<article class="link-card tone-${escapeAttribute(link.tone || "teal")}">
     <div class="card-topline">
-      <span class="link-mark" aria-hidden="true">${escapeHtml(link.mark)}</span>
+      <div class="card-identity">
+        <span class="link-mark" aria-hidden="true">${escapeHtml(link.mark)}</span>
+        <h3><a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer"><span class="card-title-text">${escapeHtml(link.title)}</span><i data-lucide="arrow-up-right" aria-hidden="true"></i></a></h3>
+      </div>
       <span class="status-badge">${escapeHtml(link.status)}</span>
     </div>
-    <h3><a href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.title)} <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></h3>
     <p class="card-description">${escapeHtml(link.description)}</p>
     <div class="card-meta">
       <span>${escapeHtml(link.note)}</span>

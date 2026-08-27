@@ -266,8 +266,16 @@ h1 {
   line-height: 1.02;
 }
 
-h1 em {
-  color: var(--coral);
+.headline-gradient {
+  display: inline-block;
+  background: linear-gradient(112deg, var(--teal) 0%, var(--blue) 48%, var(--coral) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.headline-gradient em {
   font-style: normal;
 }
 
@@ -421,7 +429,26 @@ h1 em {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+}
+
+.card-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.card-identity .link-mark {
+  flex: 0 0 auto;
+}
+
+.card-identity h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .link-mark {
@@ -439,6 +466,7 @@ h1 em {
 }
 
 .status-badge {
+  flex: 0 0 auto;
   padding: 4px 7px;
   border: 1px solid color-mix(in srgb, var(--tone) 36%, var(--line));
   border-radius: 4px;
@@ -450,17 +478,20 @@ h1 em {
 }
 
 .link-card h3 {
-  margin: 20px 0 8px;
-  font-size: 1.05rem;
-  font-weight: 700;
-  line-height: 1.25;
+  margin: 0;
 }
 
 .link-card h3 a {
-  display: inline-flex;
+  display: flex;
+  min-width: 0;
   align-items: center;
   gap: 5px;
   text-decoration: none;
+}
+
+.card-title-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .link-card h3 a:hover {
@@ -476,7 +507,7 @@ h1 em {
 
 .card-description {
   max-width: 32em;
-  margin: 0;
+  margin: 17px 0 0;
   color: var(--muted);
   font-size: 0.79rem;
   line-height: 1.65;
