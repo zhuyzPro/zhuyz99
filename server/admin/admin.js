@@ -1,7 +1,17 @@
 const API_BASE = window.location.pathname.startsWith("/wayfind-admin") ? "/wayfind-api" : "/api";
 const THEME_STORAGE_KEY = "wayfind-admin-theme";
 const TONES = new Set(["coral", "teal", "yellow", "blue", "purple", "orange", "rose", "lime", "indigo"]);
-const state = { categories: [], links: [], editingId: null, editingCategoryId: null, categoryBeforeNew: "", categoryReturnToLink: false, pendingCategoryDelete: null };
+const state = {
+  categories: [],
+  links: [],
+  editingId: null,
+  editingCategoryId: null,
+  categoryBeforeNew: "",
+  categoryReturnToLink: false,
+  pendingCategoryDelete: null,
+  pendingLinkDraft: null,
+  pendingCategoryDraft: null,
+};
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
@@ -130,6 +140,7 @@ async function showDashboard(username) {
     state.categories = data.categories || [];
     state.links = data.links || [];
     render();
+    restorePendingDraft();
   } catch (error) {
     if (error.status === 401) {
       showLogin();
@@ -221,37 +232,50 @@ async function handlePanelClick(event) {
   if (button.dataset.action === "delete") {
     if (!window.confirm(`确定删除“${link.title}”吗？`)) return;
     try {
-      await request(`/admin/links/${encodeURIComponent(link.id)}`, { method: "DELETE" });
+      await request(`/admin/links/${encodeURIComponent(link.id)}`, { method: "DELETE", body: { updatedAt: link.updatedAt } });
       state.links = state.links.filter((item) => item.id !== link.id);
       render();
       showFlash("入口已删除。", "success");
-    } catch (error) { showFlash(error.message, "error"); }
+    } catch (error) {
+      if (!handleSessionExpired(error)) showFlash(error.message, "error");
+    }
     return;
   }
+  const category = state.categories.find((item) => item.name === link.category);
+  if (!category) return;
   const categoryLinks = state.links.filter((item) => item.category === link.category).sort((a, b) => a.position - b.position);
   const current = categoryLinks.findIndex((item) => item.id === link.id);
   const next = button.dataset.action === "up" ? current - 1 : current + 1;
   if (next < 0 || next >= categoryLinks.length) return;
   [categoryLinks[current], categoryLinks[next]] = [categoryLinks[next], categoryLinks[current]];
   try {
-    await request("/admin/reorder", { method: "POST", body: { category: link.category, ids: categoryLinks.map((item) => item.id) } });
-    categoryLinks.forEach((item, position) => { item.position = position; });
+    const result = await request("/admin/reorder", {
+      method: "POST",
+      body: {
+        categoryId: category.id,
+        categoryUpdatedAt: category.updatedAt,
+        items: categoryLinks.map((item) => ({ id: item.id, updatedAt: item.updatedAt })),
+      },
+    });
+    state.links = result.links || state.links;
     render();
     showFlash("排序已保存。", "success");
-  } catch (error) { showFlash(error.message, "error"); }
+  } catch (error) {
+    if (!handleSessionExpired(error)) showFlash(error.message, "error");
+  }
 }
 
 async function toggleCategoryEnabled(category, button) {
   const enabled = !isEnabled(category);
   button.disabled = true;
   try {
-    const result = await request(`/admin/categories/${encodeURIComponent(category.id)}/enabled`, { method: "PATCH", body: { enabled } });
+    const result = await request(`/admin/categories/${encodeURIComponent(category.id)}/enabled`, { method: "PATCH", body: { enabled, updatedAt: category.updatedAt } });
     const updatedCategory = result.category ? { ...category, ...result.category } : { ...category, enabled };
     state.categories = state.categories.map((item) => item.id === category.id ? updatedCategory : item);
     render();
     showFlash(enabled ? `分类“${updatedCategory.name}”已开启。` : `分类“${updatedCategory.name}”已关闭。`, "success");
   } catch (error) {
-    showFlash(error.message, "error");
+    if (!handleSessionExpired(error)) showFlash(error.message, "error");
   } finally {
     button.disabled = false;
   }
@@ -261,28 +285,41 @@ async function toggleLinkEnabled(link, button) {
   const enabled = !isEnabled(link);
   button.disabled = true;
   try {
-    const result = await request(`/admin/links/${encodeURIComponent(link.id)}/enabled`, { method: "PATCH", body: { enabled } });
+    const result = await request(`/admin/links/${encodeURIComponent(link.id)}/enabled`, { method: "PATCH", body: { enabled, updatedAt: link.updatedAt } });
     const updatedLink = result.link ? { ...link, ...result.link } : { ...link, enabled };
     state.links = state.links.map((item) => item.id === link.id ? updatedLink : item);
     render();
     showFlash(enabled ? `入口“${updatedLink.title}”已开启。` : `入口“${updatedLink.title}”已关闭。`, "success");
   } catch (error) {
-    showFlash(error.message, "error");
+    if (!handleSessionExpired(error)) showFlash(error.message, "error");
   } finally {
     button.disabled = false;
   }
 }
 
-function openDialog(link = null) {
-  state.editingId = link?.id || null;
-  document.querySelector("#dialog-title").textContent = link ? "编辑入口" : "新增入口";
-  const values = link || { category: state.categories[0]?.name || "", title: "", url: "", mark: "", status: "常用", tone: "teal", description: "", note: "", adminNote: "" };
+function openDialog(link = null, draft = null) {
+  state.editingId = draft?.editingId ?? link?.id ?? null;
+  document.querySelector("#dialog-title").textContent = state.editingId ? "编辑入口" : "新增入口";
+  const values = {
+    category: state.categories[0]?.name || "",
+    title: "",
+    url: "",
+    mark: "",
+    status: "常用",
+    tone: "teal",
+    description: "",
+    note: "",
+    adminNote: "",
+    ...(link || {}),
+    ...(draft?.values || {}),
+  };
   state.categoryBeforeNew = values.category;
   populateCategoryOptions(values.category);
   ["title", "url", "category", "mark", "status", "tone", "description", "note"].forEach((field) => {
     document.querySelector(`#field-${field}`).value = values[field] || "";
   });
   document.querySelector("#field-admin-note").value = values.adminNote || "";
+  document.querySelector("#field-updated-at").value = values.updatedAt || "";
   setTone(values.tone, false);
   hide("#dialog-error");
   showLinkDialog();
@@ -357,6 +394,7 @@ async function savePassword(event) {
     showLogin();
     showLoginError("密码已修改，请使用新密码重新登录。", "success");
   } catch (error) {
+    if (handleSessionExpired(error)) return;
     const target = document.querySelector("#settings-error");
     target.textContent = error.message;
     target.hidden = false;
@@ -384,9 +422,9 @@ function handleCategorySelect(event) {
   openCategoryDialog(null, true);
 }
 
-function openCategoryDialog(category = null, fromLink = false) {
-  state.editingCategoryId = category?.id || null;
-  state.categoryReturnToLink = fromLink;
+function openCategoryDialog(category = null, fromLink = false, draft = null) {
+  state.editingCategoryId = draft?.editingId ?? category?.id ?? null;
+  state.categoryReturnToLink = draft?.categoryReturnToLink ?? fromLink;
   if (fromLink) {
     const current = document.querySelector("#field-category").value;
     if (current !== "__new__") state.categoryBeforeNew = current || state.categories[0]?.name || "";
@@ -394,10 +432,12 @@ function openCategoryDialog(category = null, fromLink = false) {
   }
   const form = document.querySelector("#category-form");
   form.reset();
-  document.querySelector("#category-dialog-title").textContent = category ? "编辑分类" : "新增分类";
-  document.querySelector("#save-category-label").textContent = category ? "保存修改" : "保存分类";
-  document.querySelector("#category-name").value = category?.name || "";
-  document.querySelector("#category-description").value = category?.description || "";
+  const values = { ...(category || {}), ...(draft?.values || {}) };
+  document.querySelector("#category-dialog-title").textContent = state.editingCategoryId ? "编辑分类" : "新增分类";
+  document.querySelector("#save-category-label").textContent = state.editingCategoryId ? "保存修改" : "保存分类";
+  document.querySelector("#category-name").value = values.name || "";
+  document.querySelector("#category-description").value = values.description || "";
+  document.querySelector("#category-updated-at").value = values.updatedAt || "";
   hide("#category-dialog-error");
   const dialog = document.querySelector("#category-dialog");
   if (typeof dialog.showModal === "function") dialog.showModal();
@@ -453,7 +493,7 @@ async function deleteCategory(event) {
   try {
     const result = await request(`/admin/categories/${encodeURIComponent(category.id)}`, {
       method: "DELETE",
-      body: targetId ? { targetCategoryId: targetId } : undefined,
+      body: { updatedAt: category.updatedAt, ...(targetId ? { targetCategoryId: targetId } : {}) },
     });
     state.categories = result.categories || state.categories.filter((item) => item.id !== category.id);
     state.links = result.links || state.links.filter((link) => link.category !== category.name);
@@ -461,6 +501,7 @@ async function deleteCategory(event) {
     render();
     showFlash("分类已删除。", "success");
   } catch (error) {
+    if (handleSessionExpired(error)) return;
     const target = document.querySelector("#category-delete-error");
     target.textContent = error.message;
     target.hidden = false;
@@ -477,7 +518,10 @@ async function saveCategory(event) {
   try {
     const editingId = state.editingCategoryId;
     const path = editingId ? `/admin/categories/${encodeURIComponent(editingId)}` : "/admin/categories";
-    const result = await request(path, { method: editingId ? "PUT" : "POST", body: { name: form.get("name"), description: form.get("description") } });
+    const result = await request(path, {
+      method: editingId ? "PUT" : "POST",
+      body: { name: form.get("name"), description: form.get("description"), updatedAt: form.get("updatedAt") },
+    });
     if (editingId) {
       state.categories = state.categories.map((category) => category.id === editingId ? result.category : category);
       state.links = result.links || state.links;
@@ -490,6 +534,7 @@ async function saveCategory(event) {
     closeCategoryDialog(result.category.name);
     showFlash(editingId ? "分类已更新。" : "分类已添加。", "success");
   } catch (error) {
+    if (handleSessionExpired(error, { categoryForm: formElement })) return;
     const target = document.querySelector("#category-dialog-error");
     target.textContent = error.message;
     target.hidden = false;
@@ -513,6 +558,7 @@ async function saveLink(event) {
     render();
     showFlash(state.editingId ? "入口已更新。" : "入口已添加。", "success");
   } catch (error) {
+    if (handleSessionExpired(error, { linkForm: formElement })) return;
     const target = document.querySelector("#dialog-error");
     target.textContent = error.message;
     target.hidden = false;
@@ -527,8 +573,65 @@ async function request(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(data.error || `请求失败（${response.status}）`), { status: response.status });
+  if (!response.ok) throw Object.assign(new Error(data.error || `请求失败（${response.status}）`), { status: response.status, data });
   return data;
+}
+
+function handleSessionExpired(error, { linkForm = null, categoryForm = null } = {}) {
+  if (error?.status !== 401) return false;
+
+  if (linkForm) {
+    state.pendingLinkDraft = {
+      editingId: state.editingId,
+      values: Object.fromEntries(new FormData(linkForm).entries()),
+    };
+  }
+  if (categoryForm) {
+    state.pendingCategoryDraft = {
+      editingId: state.editingCategoryId,
+      categoryReturnToLink: state.categoryReturnToLink,
+      values: Object.fromEntries(new FormData(categoryForm).entries()),
+    };
+  }
+
+  closeOpenDialogs();
+  state.categoryReturnToLink = false;
+  state.pendingCategoryDelete = null;
+  document.querySelector("#settings-form")?.reset();
+  showLogin();
+  const draftMessage = linkForm || categoryForm ? "已保留未保存的内容，重新登录后可继续编辑。" : "请重新登录后继续操作。";
+  showLoginError(`登录已失效，${draftMessage}`);
+  return true;
+}
+
+function closeOpenDialogs() {
+  ["#link-dialog", "#settings-dialog", "#category-dialog", "#category-delete-dialog"].forEach((selector) => {
+    const dialog = document.querySelector(selector);
+    if (!dialog?.open) return;
+    if (typeof dialog.close === "function") dialog.close();
+    else dialog.removeAttribute("open");
+  });
+}
+
+function restorePendingDraft() {
+  if (state.pendingLinkDraft) {
+    const pending = state.pendingLinkDraft;
+    state.pendingLinkDraft = null;
+    const link = state.links.find((item) => item.id === pending.editingId) || null;
+    const restored = link ? pending : { ...pending, editingId: null, values: { ...pending.values, updatedAt: "" } };
+    openDialog(link, restored);
+    showFlash(link ? "已恢复未保存的入口内容。" : "原入口已不存在，已恢复为新增入口。", "success");
+    return;
+  }
+
+  if (state.pendingCategoryDraft) {
+    const pending = state.pendingCategoryDraft;
+    state.pendingCategoryDraft = null;
+    const category = state.categories.find((item) => item.id === pending.editingId) || null;
+    const restored = category ? pending : { ...pending, editingId: null, values: { ...pending.values, updatedAt: "" } };
+    openCategoryDialog(category, false, restored);
+    showFlash(category ? "已恢复未保存的分类内容。" : "原分类已不存在，已恢复为新增分类。", "success");
+  }
 }
 
 function showLoginError(message, type = "error") { const target = document.querySelector("#login-error"); target.textContent = message; target.className = `form-error${type === "success" ? " success-message" : ""}`; target.hidden = false; }

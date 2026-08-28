@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Zhuyz Pro导航</title>
+  <rect width="64" height="64" rx="14" fill="#09121a" />
+  <path d="M14 16h28l-9 11h17L25 48l7-15H14z" fill="#61d8c4" />
+  <circle cx="48" cy="16" r="6" fill="#ff7663" />
+</svg>

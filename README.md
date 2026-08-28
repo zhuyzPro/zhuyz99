@@ -22,13 +22,17 @@ python -m http.server 4173
 $env:ADMIN_USERNAME = "admin"
 $env:ADMIN_PASSWORD = "change-this-before-use"
 $env:COOKIE_SECURE = "false"
+# 可选：本地默认是 /api/；生产反向代理使用 /wayfind-api/
+$env:COOKIE_PATH = "/api/"
 # 可选：会话有效期（毫秒），默认 30 天，范围 5 分钟至 365 天
 $env:SESSION_TTL_MS = "2592000000"
 node server/wayfind-server.js
 ```
 
 后台默认监听 `127.0.0.1:4899`。生产环境使用独立 systemd 服务和 Nginx HTTPS 反向代理，不把该端口直接暴露给浏览器。
-登录会话默认有效 30 天，后台持续使用时会自动续期；会话记录保存在 SQLite，服务重启后只要仍未过期就不需要重新登录。生产环境请固定设置 `SESSION_SECRET`，否则服务重启后旧 Cookie 会失效。
+登录会话默认有效 30 天，后台持续使用时会自动续期；会话记录保存在 SQLite，服务重启后只要仍未过期就不需要重新登录。生产环境必须设置 `SESSION_SECRET`，服务会拒绝在缺少该值时启动；反向代理路径为 `/wayfind-api/` 时，将 `COOKIE_PATH=/wayfind-api/` 写入环境文件，避免会话 Cookie 被同域的无关路径携带。
+
+导航默认分类和示例入口只会在全新、空数据库首次启动时写入一次。之后即使删除所有分类或入口，服务重启也不会重新创建它们。
 
 ## GitHub Pages
 
@@ -54,5 +58,6 @@ git@github-zhuyzpro:zhuyzPro/<仓库名>.git
 index.html       页面结构
 styles.css       主题、响应式布局和交互状态
 app.js           站点数据与页面行为
+favicon.svg      浏览器图标
 .github/         GitHub Pages Actions 工作流
 ```

@@ -1,12 +1,20 @@
 const PUBLIC_API_URL = "https://zhuyz.art/wayfind-api/public/links";
 const THEME_STORAGE_KEY = "wayfind-theme";
+let isNavigationLoading = false;
 
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener("DOMContentLoaded", () => {
   initializeTheme();
   const container = document.querySelector("#link-sections");
   if (!container) return;
 
+  loadAndRenderNavigation(container);
+});
+
+async function loadAndRenderNavigation(container) {
+  if (isNavigationLoading) return;
+  isNavigationLoading = true;
   container.setAttribute("aria-busy", "true");
+  container.innerHTML = '<p class="load-state" role="status">正在加载导航...</p>';
   try {
     const data = await loadNavigationData();
     renderSectionNav(data.categories);
@@ -17,11 +25,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (error) {
     console.error("Navigation loading failed:", error);
     renderSectionNav([]);
-    container.innerHTML = '<p class="load-state" role="status">导航暂时无法加载，请稍后刷新。</p>';
+    container.innerHTML = `<div class="load-state">
+      <p role="status">导航暂时无法加载，请重新加载。</p>
+      <button class="reload-button" type="button">重新加载</button>
+    </div>`;
+    container.querySelector(".reload-button")?.addEventListener("click", () => {
+      loadAndRenderNavigation(container);
+    });
   } finally {
     container.removeAttribute("aria-busy");
+    isNavigationLoading = false;
   }
-});
+}
 
 function initializeTheme() {
   const savedTheme = readStoredTheme();
@@ -109,9 +124,6 @@ function validateNavigationData(data) {
     && item.position >= 0
   ));
 
-  if (categories.length !== data.categories.length || links.length !== data.links.length) {
-    throw new Error("Navigation API returned malformed records");
-  }
   categories.sort(comparePosition);
   return { categories, links };
 }

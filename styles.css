@@ -162,8 +162,10 @@ a {
   align-items: center;
   gap: 10px;
   padding: 8px 16px;
-  border: 1px solid color-mix(in srgb, var(--teal) 42%, var(--line-strong));
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--teal) 42%, var(--line-strong));
   background: color-mix(in srgb, var(--teal) 8%, var(--surface));
   color: var(--teal);
   font-size: 0.9rem;
@@ -178,6 +180,7 @@ a {
   flex: 0 0 auto;
   border-radius: 50%;
   background: #3bd38a;
+  box-shadow: 0 0 0 4px rgba(59, 211, 138, 0.16);
   box-shadow: 0 0 0 4px color-mix(in srgb, #3bd38a 16%, transparent);
 }
 
@@ -533,6 +536,7 @@ h1 {
 
 .card-number {
   flex: 0 0 auto;
+  color: var(--line);
   color: color-mix(in srgb, var(--text) 9%, transparent);
   font-size: 3.2rem;
   font-weight: 800;
@@ -628,6 +632,32 @@ h1 {
   background: var(--surface);
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.load-state p {
+  margin: 0;
+}
+
+.reload-button {
+  min-height: 36px;
+  margin-top: 13px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.reload-button:hover,
+.reload-button:focus-visible {
+  border-color: var(--coral);
+  background: color-mix(in srgb, var(--coral) 10%, var(--surface-hover));
+  color: var(--coral);
 }
 
 :focus-visible {

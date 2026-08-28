@@ -8,6 +8,7 @@ const net = require("node:net");
 const { URL } = require("node:url");
 const { DatabaseSync } = require("node:sqlite");
 
+const NODE_ENV = process.env.NODE_ENV || "development";
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4899);
 const ROOT_DIR = path.resolve(__dirname);
@@ -18,15 +19,32 @@ const ADMIN_FILES = new Map([
   ["admin.js", "application/javascript; charset=utf-8"],
   ["lucide-mini.js", "application/javascript; charset=utf-8"],
 ]);
-const DB_PATH = process.env.DB_PATH || path.join(ROOT_DIR, "wayfind.sqlite");
+const DB_PATH = process.env.DB_PATH || (NODE_ENV === "production"
+  ? "/var/lib/wayfind-admin/wayfind.sqlite"
+  : path.join(ROOT_DIR, "wayfind.sqlite"));
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
-const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const COOKIE_SECURE = process.env.COOKIE_SECURE !== "false";
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MIN_SESSION_TTL_MS = 5 * 60 * 1000;
 const MAX_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+const DEFAULT_COOKIE_PATH = NODE_ENV === "production" ? "/wayfind-api/" : "/api/";
+
+function configuredSessionSecret(value) {
+  const secret = String(value || "");
+  if (secret) return secret;
+  if (NODE_ENV === "production") throw new Error("SESSION_SECRET must be set in production");
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function configuredCookiePath(value) {
+  const cookiePath = String(value || DEFAULT_COOKIE_PATH).trim();
+  if (!/^\/(?:[A-Za-z0-9._~-]+\/)*$/.test(cookiePath)) {
+    throw new Error("COOKIE_PATH must be an absolute path ending in '/'");
+  }
+  return cookiePath;
+}
 
 function configuredSessionTtl(value) {
   if (value === undefined || value === "") return DEFAULT_SESSION_TTL_MS;
@@ -37,6 +55,8 @@ function configuredSessionTtl(value) {
   return ttl;
 }
 
+const SESSION_SECRET = configuredSessionSecret(process.env.SESSION_SECRET);
+const COOKIE_PATH = configuredCookiePath(process.env.COOKIE_PATH);
 const SESSION_TTL_MS = configuredSessionTtl(process.env.SESSION_TTL_MS);
 const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -140,27 +160,57 @@ ensureColumn("categories", "enabled", "INTEGER NOT NULL DEFAULT 1");
 ensureColumn("links", "enabled", "INTEGER NOT NULL DEFAULT 1");
 ensureColumn("links", "admin_note", "TEXT NOT NULL DEFAULT ''");
 
-const categoryInsert = db.prepare(`
-  INSERT OR IGNORE INTO categories (id, name, description, position, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
-const categoryNow = new Date().toISOString();
-DEFAULT_CATEGORIES.forEach((category, position) => {
-  categoryInsert.run(category.id, category.name, category.description, position, categoryNow, categoryNow);
-});
+let lastUpdatedAtMilliseconds = 0;
 
-if (Number(db.prepare("SELECT COUNT(*) AS count FROM links").get().count) === 0) {
-  const insert = db.prepare(`
-    INSERT INTO links (id, category, title, mark, tone, status, description, note, url, position, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const now = new Date().toISOString();
-  const positions = new Map(DEFAULT_CATEGORIES.map((category) => [category.name, 0]));
-  for (const [category, title, mark, tone, status, description, note, url] of SEED_LINKS) {
-    insert.run(crypto.randomUUID(), category, title, mark, tone, status, description, note, url, positions.get(category), now, now);
-    positions.set(category, positions.get(category) + 1);
+function nextUpdatedAt() {
+  // `updated_at` is also the optimistic-concurrency token. Keep it unique
+  // even when two synchronous writes happen in the same clock millisecond.
+  lastUpdatedAtMilliseconds = Math.max(Date.now(), lastUpdatedAtMilliseconds + 1);
+  return new Date(lastUpdatedAtMilliseconds).toISOString();
+}
+
+function initializeNavigationData() {
+  let transactionOpen = false;
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    transactionOpen = true;
+    const initialized = db.prepare("SELECT value FROM settings WHERE key = ?").get("navigation_initialized_at");
+    if (!initialized) {
+      const categoryCount = Number(db.prepare("SELECT COUNT(*) AS count FROM categories").get().count);
+      const linkCount = Number(db.prepare("SELECT COUNT(*) AS count FROM links").get().count);
+      const now = nextUpdatedAt();
+
+      if (categoryCount === 0 && linkCount === 0) {
+        const insertCategory = db.prepare(`
+          INSERT INTO categories (id, name, description, position, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        DEFAULT_CATEGORIES.forEach((category, position) => {
+          insertCategory.run(category.id, category.name, category.description, position, now, now);
+        });
+
+        const insertLink = db.prepare(`
+          INSERT INTO links (id, category, title, mark, tone, status, description, note, url, position, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const positions = new Map(DEFAULT_CATEGORIES.map((category) => [category.name, 0]));
+        for (const [category, title, mark, tone, status, description, note, url] of SEED_LINKS) {
+          insertLink.run(crypto.randomUUID(), category, title, mark, tone, status, description, note, url, positions.get(category), now, now);
+          positions.set(category, positions.get(category) + 1);
+        }
+      }
+
+      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)")
+        .run("navigation_initialized_at", now, now);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    if (transactionOpen) db.exec("ROLLBACK");
+    throw error;
   }
 }
+
+initializeNavigationData();
 
 const loginAttempts = new Map();
 
@@ -267,13 +317,15 @@ function parseCookies(header) {
       const name = item.slice(0, index).trim();
       if (!name) return cookies;
       try {
-        cookies[name] = decodeURIComponent(item.slice(index + 1).trim());
+        // Browsers list the most-specific cookie path first. Keep it when a
+        // legacy root-path cookie shares the same name during migration.
+        if (!Object.hasOwn(cookies, name)) cookies[name] = decodeURIComponent(item.slice(index + 1).trim());
       } catch {
         // Ignore malformed cookie values instead of failing the request.
       }
     }
     return cookies;
-  }, {});
+  }, Object.create(null));
 }
 
 function pruneLoginAttempts(now) {
@@ -335,23 +387,38 @@ function getSession(req) {
   return { id, username: session.username, expiresAt };
 }
 
-function sessionCookie(token) {
+function sessionCookie(token, cookiePath = COOKIE_PATH) {
   const secure = COOKIE_SECURE ? "; Secure" : "";
-  return `wayfind_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
+  return `wayfind_session=${encodeURIComponent(token)}; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
 }
 
-function clearSessionCookie() {
-  return "wayfind_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+function clearSessionCookie(cookiePath = COOKIE_PATH) {
+  const secure = COOKIE_SECURE ? "; Secure" : "";
+  return `wayfind_session=; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+function sessionCookies(token) {
+  const cookies = [sessionCookie(token)];
+  // Old deployments used Path=/. Clear that broad cookie while issuing the
+  // scoped replacement so existing logins migrate without a forced logout.
+  if (COOKIE_PATH !== "/") cookies.push(clearSessionCookie("/"));
+  return cookies;
+}
+
+function clearedSessionCookies() {
+  const cookies = [clearSessionCookie()];
+  if (COOKIE_PATH !== "/") cookies.push(clearSessionCookie("/"));
+  return cookies;
 }
 
 function requireSession(req, res) {
   const session = getSession(req);
   if (!session) {
-    sendJson(res, 401, { error: "登录已失效，请重新登录" });
+    sendJson(res, 401, { error: "登录已失效，请重新登录" }, { "Set-Cookie": clearedSessionCookies() });
     return null;
   }
   // Refresh the browser cookie while the account is actively being used.
-  res.setHeader("Set-Cookie", sessionCookie(`${session.id}.${signSession(session.id)}`));
+  res.setHeader("Set-Cookie", sessionCookies(`${session.id}.${signSession(session.id)}`));
   return session;
 }
 
@@ -409,6 +476,18 @@ function enabledField(value) {
   return value;
 }
 
+function updatedAtField(value) {
+  return textField(value, "版本信息", { max: 96 });
+}
+
+function staleUpdateError() {
+  return Object.assign(new Error("内容已被其他会话更新，请刷新后重试"), { status: 409 });
+}
+
+function requireSingleChange(result) {
+  if (Number(result.changes) !== 1) throw staleUpdateError();
+}
+
 function toCategory(row) {
   return {
     id: row.id,
@@ -416,15 +495,21 @@ function toCategory(row) {
     description: row.description,
     position: row.position,
     enabled: Number(row.enabled) === 1,
+    updatedAt: row.updated_at ?? row.updatedAt,
   };
 }
 
 function getCategories() {
-  return db.prepare("SELECT id, name, description, position, enabled FROM categories ORDER BY position, name COLLATE NOCASE").all().map(toCategory);
+  return db.prepare("SELECT id, name, description, position, enabled, updated_at FROM categories ORDER BY position, name COLLATE NOCASE").all().map(toCategory);
 }
 
 function getPublicCategories() {
-  return db.prepare("SELECT id, name, description, position, enabled FROM categories WHERE enabled = 1 ORDER BY position, name COLLATE NOCASE").all().map(toCategory);
+  return db.prepare("SELECT id, name, description, position, enabled, updated_at FROM categories WHERE enabled = 1 ORDER BY position, name COLLATE NOCASE").all().map(toCategory);
+}
+
+function getCategory(id) {
+  const row = db.prepare("SELECT id, name, description, position, enabled, updated_at FROM categories WHERE id = ?").get(id);
+  return row ? toCategory(row) : null;
 }
 
 function getCategoryNames() {
@@ -521,7 +606,7 @@ function handleLogin(req, res) {
     const password = String(body.password || "");
     if (username !== ADMIN_USERNAME || !(await verifyPassword(password, passwordHash))) return sendJson(res, 401, { error: "用户名或密码不正确" });
     loginAttempts.delete(address);
-    sendJson(res, 200, { ok: true, username }, { "Set-Cookie": sessionCookie(createSession(username)) });
+    sendJson(res, 200, { ok: true, username }, { "Set-Cookie": sessionCookies(createSession(username)) });
   }).catch((error) => sendRequestError(res, error));
 }
 
@@ -531,36 +616,65 @@ function handlePasswordChange(req, res) {
     const currentPassword = String(body.currentPassword || "");
     const newPassword = String(body.newPassword || "");
     const confirmPassword = String(body.confirmPassword || "");
-    if (!(await verifyPassword(currentPassword, passwordHash))) throw Object.assign(new Error("当前密码不正确"), { status: 400 });
+    const currentPasswordHash = passwordHash;
+    if (!(await verifyPassword(currentPassword, currentPasswordHash))) throw Object.assign(new Error("当前密码不正确"), { status: 400 });
     if (newPassword.length < 12) throw Object.assign(new Error("新密码至少需要 12 个字符"), { status: 400 });
     if (newPassword.length > 200) throw Object.assign(new Error("新密码不能超过 200 个字符"), { status: 400 });
     if (newPassword !== confirmPassword) throw Object.assign(new Error("两次输入的新密码不一致"), { status: 400 });
 
     const nextPasswordHash = await hashPasswordAsync(newPassword);
-    const now = new Date().toISOString();
-    db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
-      .run("admin_password_hash", nextPasswordHash, now);
+    let transactionOpen = false;
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      transactionOpen = true;
+      const update = db.prepare("UPDATE settings SET value = ?, updated_at = ? WHERE key = ? AND value = ?")
+        .run(nextPasswordHash, nextUpdatedAt(), "admin_password_hash", currentPasswordHash);
+      if (Number(update.changes) !== 1) {
+        throw Object.assign(new Error("密码已被其他会话修改，请重新登录"), { status: 409 });
+      }
+      db.prepare("DELETE FROM sessions").run();
+      db.exec("COMMIT");
+      transactionOpen = false;
+    } catch (error) {
+      if (transactionOpen) db.exec("ROLLBACK");
+      throw error;
+    }
     passwordHash = nextPasswordHash;
-    db.prepare("DELETE FROM sessions").run();
-    return sendJson(res, 200, { ok: true, reauthenticate: true }, { "Set-Cookie": clearSessionCookie() });
+    return sendJson(res, 200, { ok: true, reauthenticate: true }, { "Set-Cookie": clearedSessionCookies() });
   }).catch((error) => sendRequestError(res, error));
 }
 
 function handleReorder(req, res) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
   return readJson(req).then((body) => {
-    const category = textField(body.category, "分类", { max: 40 });
-    if (!getCategoryNames().has(category) || !Array.isArray(body.ids) || body.ids.length === 0) throw Object.assign(new Error("排序数据不正确"), { status: 400 });
-    const current = db.prepare("SELECT id FROM links WHERE category = ? ORDER BY position").all(category).map((row) => row.id);
-    if (current.length !== body.ids.length || new Set(current).size !== new Set(body.ids).size || !current.every((id) => body.ids.includes(id))) throw Object.assign(new Error("排序数据与当前分类不一致"), { status: 400 });
-    db.exec("BEGIN");
+    const categoryId = textField(body.categoryId, "分类标识", { max: 80 });
+    const categoryUpdatedAt = updatedAtField(body.categoryUpdatedAt);
+    if (!Array.isArray(body.items) || body.items.length === 0) throw Object.assign(new Error("排序数据不正确"), { status: 400 });
+    const requested = body.items.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw Object.assign(new Error("排序数据不正确"), { status: 400 });
+      return { id: textField(item.id, "入口标识", { max: 80 }), updatedAt: updatedAtField(item.updatedAt) };
+    });
+    const requestedVersions = new Map(requested.map((item) => [item.id, item.updatedAt]));
+    if (requestedVersions.size !== requested.length) throw Object.assign(new Error("排序数据包含重复入口"), { status: 400 });
+
+    let transactionOpen = false;
     try {
-      const update = db.prepare("UPDATE links SET position = ?, updated_at = ? WHERE id = ?");
-      const now = new Date().toISOString();
-      body.ids.forEach((id, index) => update.run(index, now, id));
+      db.exec("BEGIN IMMEDIATE");
+      transactionOpen = true;
+      const category = db.prepare("SELECT name FROM categories WHERE id = ? AND updated_at = ?").get(categoryId, categoryUpdatedAt);
+      if (!category) {
+        const exists = db.prepare("SELECT id FROM categories WHERE id = ?").get(categoryId);
+        if (!exists) throw Object.assign(new Error("分类不存在"), { status: 404 });
+        throw staleUpdateError();
+      }
+      const current = db.prepare("SELECT id, updated_at FROM links WHERE category = ? ORDER BY position").all(category.name);
+      if (current.length !== requested.length || !current.every((row) => requestedVersions.get(row.id) === row.updated_at)) throw staleUpdateError();
+      const update = db.prepare("UPDATE links SET position = ?, updated_at = ? WHERE id = ? AND updated_at = ?");
+      requested.forEach((item, index) => requireSingleChange(update.run(index, nextUpdatedAt(), item.id, item.updatedAt)));
       db.exec("COMMIT");
+      transactionOpen = false;
     } catch (error) {
-      db.exec("ROLLBACK");
+      if (transactionOpen) db.exec("ROLLBACK");
       throw error;
     }
     sendJson(res, 200, { ok: true, links: getAllLinks() });
@@ -574,7 +688,7 @@ function handleAdminCategory(req, res) {
     const description = textField(body.description, "分类说明", { required: false, max: 120 }) || "自定义入口集合";
     const duplicate = db.prepare("SELECT id FROM categories WHERE name = ? COLLATE NOCASE").get(name);
     if (duplicate) throw Object.assign(new Error("这个分类已经存在"), { status: 409 });
-    const now = new Date().toISOString();
+    const now = nextUpdatedAt();
     const position = Number(db.prepare("SELECT COALESCE(MAX(position), -1) + 1 AS position FROM categories").get().position);
     const category = { id: `category-${crypto.randomUUID()}`, name, description, position, enabled: true, created_at: now, updated_at: now };
     db.prepare("INSERT INTO categories (id, name, description, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -586,29 +700,34 @@ function handleAdminCategory(req, res) {
 function handleAdminCategoryUpdate(req, res, id) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
   return readJson(req).then((body) => {
-    const category = db.prepare("SELECT id, name, description, position, enabled FROM categories WHERE id = ?").get(id);
+    const category = db.prepare("SELECT id, name, description, position, enabled, updated_at FROM categories WHERE id = ?").get(id);
     if (!category) return sendJson(res, 404, { error: "分类不存在" });
+    const updatedAt = updatedAtField(body.updatedAt);
 
     const name = textField(body.name, "分类名称", { max: 40 });
     const description = textField(body.description, "分类说明", { required: false, max: 120 }) || "自定义入口集合";
     const duplicate = db.prepare("SELECT id FROM categories WHERE name = ? COLLATE NOCASE AND id != ?").get(name, id);
     if (duplicate) throw Object.assign(new Error("这个分类已经存在"), { status: 409 });
 
-    const now = new Date().toISOString();
-    db.exec("BEGIN");
+    let transactionOpen = false;
     try {
-      db.prepare("UPDATE categories SET name = ?, description = ?, updated_at = ? WHERE id = ?").run(name, description, now, id);
+      db.exec("BEGIN IMMEDIATE");
+      transactionOpen = true;
+      const now = nextUpdatedAt();
+      requireSingleChange(db.prepare("UPDATE categories SET name = ?, description = ?, updated_at = ? WHERE id = ? AND updated_at = ?")
+        .run(name, description, now, id, updatedAt));
       if (name !== category.name) {
-        db.prepare("UPDATE links SET category = ?, updated_at = ? WHERE category = ?").run(name, now, category.name);
+        db.prepare("UPDATE links SET category = ?, updated_at = ? WHERE category = ?").run(name, nextUpdatedAt(), category.name);
       }
       db.exec("COMMIT");
+      transactionOpen = false;
     } catch (error) {
-      db.exec("ROLLBACK");
+      if (transactionOpen) db.exec("ROLLBACK");
       throw error;
     }
 
     return sendJson(res, 200, {
-      category: toCategory({ ...category, name, description }),
+      category: getCategory(id),
       links: getAllLinks(),
     });
   }).catch((error) => sendRequestError(res, error));
@@ -618,19 +737,22 @@ function handleAdminCategoryEnabled(req, res, id) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
   return readJson(req).then((body) => {
     const enabled = enabledField(body.enabled);
-    const category = db.prepare("SELECT id, name, description, position, enabled FROM categories WHERE id = ?").get(id);
+    const category = db.prepare("SELECT id FROM categories WHERE id = ?").get(id);
     if (!category) return sendJson(res, 404, { error: "分类不存在" });
-    const now = new Date().toISOString();
-    db.prepare("UPDATE categories SET enabled = ?, updated_at = ? WHERE id = ?").run(enabled ? 1 : 0, now, id);
-    return sendJson(res, 200, { category: toCategory({ ...category, enabled: enabled ? 1 : 0 }) });
+    const updatedAt = updatedAtField(body.updatedAt);
+    const now = nextUpdatedAt();
+    requireSingleChange(db.prepare("UPDATE categories SET enabled = ?, updated_at = ? WHERE id = ? AND updated_at = ?")
+      .run(enabled ? 1 : 0, now, id, updatedAt));
+    return sendJson(res, 200, { category: getCategory(id) });
   }).catch((error) => sendRequestError(res, error));
 }
 
 function handleAdminCategoryDelete(req, res, id) {
   if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
   return readJson(req).then((body) => {
-    const category = db.prepare("SELECT id, name FROM categories WHERE id = ?").get(id);
+    const category = db.prepare("SELECT id, name, updated_at FROM categories WHERE id = ?").get(id);
     if (!category) return sendJson(res, 404, { error: "分类不存在" });
+    const updatedAt = updatedAtField(body.updatedAt);
     const categories = getCategories();
     if (categories.length <= 1) return sendJson(res, 400, { error: "至少需要保留一个分类" });
     const count = Number(db.prepare("SELECT COUNT(*) AS count FROM links WHERE category = ?").get(category.name).count);
@@ -639,19 +761,21 @@ function handleAdminCategoryDelete(req, res, id) {
     if (targetId && (!target || target.id === category.id)) return sendJson(res, 400, { error: "移动目标分类不正确" });
     if (count > 0 && !target) return sendJson(res, 409, { error: `该分类还有 ${count} 个入口，请选择要移动到的分类` });
 
-    const now = new Date().toISOString();
-    db.exec("BEGIN");
+    let transactionOpen = false;
     try {
+      db.exec("BEGIN IMMEDIATE");
+      transactionOpen = true;
       if (count > 0) {
         const startPosition = nextPosition(target.name);
         const update = db.prepare("UPDATE links SET category = ?, position = ?, updated_at = ? WHERE id = ?");
         const links = db.prepare("SELECT id FROM links WHERE category = ? ORDER BY position, title COLLATE NOCASE").all(category.name);
-        links.forEach((link, index) => update.run(target.name, startPosition + index, now, link.id));
+        links.forEach((link, index) => update.run(target.name, startPosition + index, nextUpdatedAt(), link.id));
       }
-      db.prepare("DELETE FROM categories WHERE id = ?").run(id);
+      requireSingleChange(db.prepare("DELETE FROM categories WHERE id = ? AND updated_at = ?").run(id, updatedAt));
       db.exec("COMMIT");
+      transactionOpen = false;
     } catch (error) {
-      db.exec("ROLLBACK");
+      if (transactionOpen) db.exec("ROLLBACK");
       throw error;
     }
     return sendJson(res, 200, { ok: true, categories: getCategories(), links: getAllLinks() });
@@ -663,7 +787,7 @@ function handleAdminLink(req, res, method, id) {
   return readJson(req).then((body) => {
     if (method === "POST") {
       const link = normalizeLink(body);
-      const now = new Date().toISOString();
+      const now = nextUpdatedAt();
       const created = { id: crypto.randomUUID(), ...link, position: nextPosition(link.category), enabled: true, created_at: now, updated_at: now };
       db.prepare(`INSERT INTO links (id, category, title, mark, tone, status, description, note, admin_note, url, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(created.id, created.category, created.title, created.mark, created.tone, created.status, created.description, created.note, created.adminNote, created.url, created.position, created.created_at, created.updated_at);
@@ -671,16 +795,17 @@ function handleAdminLink(req, res, method, id) {
     }
     const existing = getLink(id);
     if (!existing) return sendJson(res, 404, { error: "入口不存在" });
+    const updatedAt = updatedAtField(body.updatedAt);
     if (method === "DELETE") {
-      db.prepare("DELETE FROM links WHERE id = ?").run(id);
+      requireSingleChange(db.prepare("DELETE FROM links WHERE id = ? AND updated_at = ?").run(id, updatedAt));
       return sendJson(res, 200, { ok: true });
     }
     const link = normalizeLink(body, existing);
-    const now = new Date().toISOString();
+    const now = nextUpdatedAt();
     const position = link.category === existing.category ? existing.position : nextPosition(link.category);
-    db.prepare(`UPDATE links SET category = ?, title = ?, mark = ?, tone = ?, status = ?, description = ?, note = ?, admin_note = ?, url = ?, position = ?, updated_at = ? WHERE id = ?`)
-      .run(link.category, link.title, link.mark, link.tone, link.status, link.description, link.note, link.adminNote, link.url, position, now, id);
-    return sendJson(res, 200, { link: toLink({ ...existing, ...link, id, position, updated_at: now }) });
+    requireSingleChange(db.prepare(`UPDATE links SET category = ?, title = ?, mark = ?, tone = ?, status = ?, description = ?, note = ?, admin_note = ?, url = ?, position = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
+      .run(link.category, link.title, link.mark, link.tone, link.status, link.description, link.note, link.adminNote, link.url, position, now, id, updatedAt));
+    return sendJson(res, 200, { link: getLink(id) });
   }).catch((error) => sendRequestError(res, error));
 }
 
@@ -690,9 +815,11 @@ function handleAdminLinkEnabled(req, res, id) {
     const enabled = enabledField(body.enabled);
     const existing = getLink(id);
     if (!existing) return sendJson(res, 404, { error: "入口不存在" });
-    const now = new Date().toISOString();
-    db.prepare("UPDATE links SET enabled = ?, updated_at = ? WHERE id = ?").run(enabled ? 1 : 0, now, id);
-    return sendJson(res, 200, { link: { ...existing, enabled, updatedAt: now } });
+    const updatedAt = updatedAtField(body.updatedAt);
+    const now = nextUpdatedAt();
+    requireSingleChange(db.prepare("UPDATE links SET enabled = ?, updated_at = ? WHERE id = ? AND updated_at = ?")
+      .run(enabled ? 1 : 0, now, id, updatedAt));
+    return sendJson(res, 200, { link: getLink(id) });
   }).catch((error) => sendRequestError(res, error));
 }
 
@@ -725,12 +852,12 @@ const server = http.createServer((req, res) => {
     if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
     const session = getSession(req);
     if (session) db.prepare("DELETE FROM sessions WHERE id = ?").run(session.id);
-    return sendJson(res, 200, { ok: true }, { "Set-Cookie": clearSessionCookie() });
+    return sendJson(res, 200, { ok: true }, { "Set-Cookie": clearedSessionCookies() });
   }
   if (pathname === "/api/auth/session" && req.method === "GET") {
     const session = getSession(req);
-    if (session) res.setHeader("Set-Cookie", sessionCookie(`${session.id}.${signSession(session.id)}`));
-    return sendJson(res, 200, session ? { authenticated: true, username: session.username } : { authenticated: false });
+    if (session) res.setHeader("Set-Cookie", sessionCookies(`${session.id}.${signSession(session.id)}`));
+    return sendJson(res, 200, session ? { authenticated: true, username: session.username } : { authenticated: false }, session ? {} : { "Set-Cookie": clearedSessionCookies() });
   }
   if (pathname === "/api/admin/links" && req.method === "GET") {
     if (!requireSession(req, res)) return;

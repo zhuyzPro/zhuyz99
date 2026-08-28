@@ -7,10 +7,15 @@ Type=simple
 User=wayfind
 Group=wayfind
 WorkingDirectory=/opt/wayfind-admin
+Environment=NODE_ENV=production
+Environment=DB_PATH=/var/lib/wayfind-admin/wayfind.sqlite
 EnvironmentFile=/etc/wayfind-admin/wayfind.env
 ExecStart=/usr/bin/node /opt/wayfind-admin/server/wayfind-server.js
 Restart=on-failure
 RestartSec=3
+StateDirectory=wayfind-admin
+StateDirectoryMode=0750
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
