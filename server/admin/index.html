@@ -35,6 +35,10 @@
             <i data-lucide="external-link" aria-hidden="true"></i><span>进入前台</span>
           </a>
           <span id="logout-divider" class="header-divider" aria-hidden="true" hidden></span>
+          <button id="settings-button" class="icon-button" type="button" title="个人设置" aria-label="个人设置" hidden>
+            <i data-lucide="settings-2" aria-hidden="true"></i>
+          </button>
+          <span id="settings-divider" class="header-divider" aria-hidden="true" hidden></span>
           <button id="logout-button" class="icon-button" type="button" title="退出登录" aria-label="退出登录" hidden>
             <i data-lucide="log-out" aria-hidden="true"></i>
           </button>
@@ -107,6 +111,23 @@
         </div>
         <p id="dialog-error" class="form-error" role="alert" hidden></p>
         <div class="dialog-actions"><button id="cancel-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存入口</span><i data-lucide="check" aria-hidden="true"></i></button></div>
+      </form>
+    </dialog>
+
+    <dialog id="settings-dialog" class="link-dialog" aria-labelledby="settings-dialog-title">
+      <form id="settings-form" method="dialog">
+        <div class="dialog-header">
+          <div><p class="eyebrow">PERSONAL SETTINGS</p><h2 id="settings-dialog-title">修改密码</h2></div>
+          <button id="close-settings-dialog" class="icon-button" type="button" title="关闭" aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="form-grid">
+          <label class="full-width">当前密码<input id="current-password" name="currentPassword" type="password" autocomplete="current-password" required /></label>
+          <label>新密码<input id="new-password" name="newPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password" required /></label>
+          <label>确认新密码<input id="confirm-password" name="confirmPassword" type="password" minlength="12" maxlength="200" autocomplete="new-password" required /></label>
+        </div>
+        <p class="settings-hint">新密码至少需要 12 个字符。保存后需要重新登录。</p>
+        <p id="settings-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button id="cancel-settings-dialog" class="secondary-button" type="button">取消</button><button class="primary-button" type="submit"><span>保存密码</span><i data-lucide="check" aria-hidden="true"></i></button></div>
       </form>
     </dialog>
 

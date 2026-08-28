@@ -100,6 +100,11 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
   CREATE INDEX IF NOT EXISTS links_category_position ON links(category, position);
 `);
 
@@ -151,6 +156,16 @@ function hashPassword(password) {
   return `scrypt$${salt.toString("base64url")}$${key.toString("base64url")}`;
 }
 
+function hashPasswordAsync(password) {
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16);
+    crypto.scrypt(password, salt, 32, { N: 16384, r: 8, p: 1 }, (error, key) => {
+      if (error) return reject(error);
+      resolve(`scrypt$${salt.toString("base64url")}$${key.toString("base64url")}`);
+    });
+  });
+}
+
 function verifyPassword(password, encoded) {
   try {
     const [algorithm, saltText, keyText, extra] = String(encoded).split("$");
@@ -170,7 +185,11 @@ function verifyPassword(password, encoded) {
   }
 }
 
-const PASSWORD_HASH = configuredPasswordHash();
+const storedPassword = db.prepare("SELECT value FROM settings WHERE key = ?").get("admin_password_hash");
+let passwordHash = storedPassword?.value || configuredPasswordHash();
+if (!storedPassword) {
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)").run("admin_password_hash", passwordHash, new Date().toISOString());
+}
 
 function sendJson(res, status, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload);
@@ -469,9 +488,30 @@ function handleLogin(req, res) {
     loginAttempts.set(address, record);
     const username = String(body.username || "").trim();
     const password = String(body.password || "");
-    if (username !== ADMIN_USERNAME || !(await verifyPassword(password, PASSWORD_HASH))) return sendJson(res, 401, { error: "用户名或密码不正确" });
+    if (username !== ADMIN_USERNAME || !(await verifyPassword(password, passwordHash))) return sendJson(res, 401, { error: "用户名或密码不正确" });
     loginAttempts.delete(address);
     sendJson(res, 200, { ok: true, username }, { "Set-Cookie": sessionCookie(createSession(username)) });
+  }).catch((error) => sendRequestError(res, error));
+}
+
+function handlePasswordChange(req, res) {
+  if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
+  return readJson(req).then(async (body) => {
+    const currentPassword = String(body.currentPassword || "");
+    const newPassword = String(body.newPassword || "");
+    const confirmPassword = String(body.confirmPassword || "");
+    if (!(await verifyPassword(currentPassword, passwordHash))) throw Object.assign(new Error("当前密码不正确"), { status: 400 });
+    if (newPassword.length < 12) throw Object.assign(new Error("新密码至少需要 12 个字符"), { status: 400 });
+    if (newPassword.length > 200) throw Object.assign(new Error("新密码不能超过 200 个字符"), { status: 400 });
+    if (newPassword !== confirmPassword) throw Object.assign(new Error("两次输入的新密码不一致"), { status: 400 });
+
+    const nextPasswordHash = await hashPasswordAsync(newPassword);
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
+      .run("admin_password_hash", nextPasswordHash, now);
+    passwordHash = nextPasswordHash;
+    sessions.clear();
+    return sendJson(res, 200, { ok: true, reauthenticate: true }, { "Set-Cookie": clearSessionCookie() });
   }).catch((error) => sendRequestError(res, error));
 }
 
@@ -645,6 +685,11 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/health" && req.method === "GET") return sendJson(res, 200, { ok: true, service: "wayfind-admin" });
   if (pathname === "/api/public/links" && req.method === "GET") return sendJson(res, 200, { categories: getPublicCategories(), links: getPublicLinks() });
   if (pathname === "/api/auth/login" && req.method === "POST") return handleLogin(req, res);
+  if (pathname === "/api/auth/password" && req.method === "POST") {
+    const session = requireSession(req, res);
+    if (!session) return;
+    return handlePasswordChange(req, res);
+  }
   if (pathname === "/api/auth/logout" && req.method === "POST") {
     if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
     const session = getSession(req);

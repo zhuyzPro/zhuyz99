@@ -98,7 +98,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .front-link { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .78rem; text-decoration: none; }
 .front-link:hover, .front-link:focus-visible { color: var(--text); }
 .front-link svg { width: 15px; height: 15px; }
-.front-link[hidden], .header-divider[hidden], #logout-button[hidden] { display: none; }
+.front-link[hidden], .header-divider[hidden], #settings-button[hidden], #settings-divider[hidden], #logout-button[hidden] { display: none; }
 .icon-button { display: inline-grid; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
 .icon-button:hover:not(:disabled), .icon-button:focus-visible:not(:disabled) { border-color: var(--line-strong); background: var(--surface); color: var(--text); }
 .icon-button:disabled { cursor: not-allowed; opacity: .3; }
@@ -147,6 +147,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .secondary-button:hover, .secondary-button:focus-visible { border-color: var(--text); color: var(--text); }
 .primary-button svg { width: 15px; height: 15px; }
 .form-error { margin: 0; color: var(--danger); font-size: .78rem; }
+.success-message { color: var(--teal); }
+.settings-hint { margin: 16px 0 0; color: var(--muted); font-size: .76rem; }
 .dashboard-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
 .dashboard-heading h1 { margin-bottom: 10px; }
 .dashboard-copy { margin: 0; }

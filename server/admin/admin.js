@@ -66,6 +66,7 @@ async function start() {
 function bindEvents() {
   document.querySelector("#login-form").addEventListener("submit", login);
   document.querySelector("#logout-button").addEventListener("click", logout);
+  document.querySelector("#settings-button").addEventListener("click", openSettingsDialog);
   document.querySelector("#add-button").addEventListener("click", () => openDialog());
   document.querySelector("#add-category-button").addEventListener("click", () => openCategoryDialog());
   document.querySelector("#category-panels").addEventListener("click", handlePanelClick);
@@ -75,6 +76,9 @@ function bindEvents() {
   document.querySelector("#link-form").addEventListener("submit", saveLink);
   document.querySelector("#close-dialog").addEventListener("click", closeDialog);
   document.querySelector("#cancel-dialog").addEventListener("click", closeDialog);
+  document.querySelector("#settings-form").addEventListener("submit", savePassword);
+  document.querySelector("#close-settings-dialog").addEventListener("click", closeSettingsDialog);
+  document.querySelector("#cancel-settings-dialog").addEventListener("click", closeSettingsDialog);
   document.querySelector("#category-form").addEventListener("submit", saveCategory);
   document.querySelector("#close-category-dialog").addEventListener("click", closeCategoryDialog);
   document.querySelector("#cancel-category-dialog").addEventListener("click", closeCategoryDialog);
@@ -116,6 +120,8 @@ async function showDashboard(username) {
   document.querySelector("#front-link").hidden = false;
   document.querySelector("#front-divider").hidden = false;
   document.querySelector("#logout-divider").hidden = false;
+  document.querySelector("#settings-button").hidden = false;
+  document.querySelector("#settings-divider").hidden = false;
   document.querySelector("#logout-button").hidden = false;
   document.querySelector("#login-view").hidden = true;
   document.querySelector("#dashboard-view").hidden = false;
@@ -139,6 +145,8 @@ function showLogin() {
   document.querySelector("#front-link").hidden = true;
   document.querySelector("#front-divider").hidden = true;
   document.querySelector("#logout-divider").hidden = true;
+  document.querySelector("#settings-button").hidden = true;
+  document.querySelector("#settings-divider").hidden = true;
   document.querySelector("#logout-button").hidden = true;
   document.querySelector("#dashboard-view").hidden = true;
   document.querySelector("#login-view").hidden = false;
@@ -320,6 +328,41 @@ function closeDialog() {
   else dialog.removeAttribute("open");
 }
 
+function openSettingsDialog() {
+  const form = document.querySelector("#settings-form");
+  form.reset();
+  hide("#settings-error");
+  const dialog = document.querySelector("#settings-dialog");
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+  document.querySelector("#current-password").focus();
+}
+
+function closeSettingsDialog() {
+  const dialog = document.querySelector("#settings-dialog");
+  if (typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+async function savePassword(event) {
+  event.preventDefault();
+  hide("#settings-error");
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
+  const button = formElement.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    await request("/auth/password", { method: "POST", body: Object.fromEntries(form.entries()) });
+    closeSettingsDialog();
+    showLogin();
+    showLoginError("密码已修改，请使用新密码重新登录。", "success");
+  } catch (error) {
+    const target = document.querySelector("#settings-error");
+    target.textContent = error.message;
+    target.hidden = false;
+  } finally { button.disabled = false; }
+}
+
 function showLinkDialog() {
   const dialog = document.querySelector("#link-dialog");
   if (!dialog.open && typeof dialog.showModal === "function") dialog.showModal();
@@ -488,7 +531,7 @@ async function request(path, options = {}) {
   return data;
 }
 
-function showLoginError(message) { const target = document.querySelector("#login-error"); target.textContent = message; target.hidden = false; }
+function showLoginError(message, type = "error") { const target = document.querySelector("#login-error"); target.textContent = message; target.className = `form-error${type === "success" ? " success-message" : ""}`; target.hidden = false; }
 function showFlash(message, type) { const target = document.querySelector("#flash"); target.textContent = message; target.className = `flash ${type}`; target.hidden = false; window.clearTimeout(showFlash.timer); showFlash.timer = window.setTimeout(() => { target.hidden = true; }, 3200); }
 function hide(selector) { document.querySelector(selector).hidden = true; }
 function refreshIcons() { if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } }); }
