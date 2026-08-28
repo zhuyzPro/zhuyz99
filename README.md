@@ -22,10 +22,13 @@ python -m http.server 4173
 $env:ADMIN_USERNAME = "admin"
 $env:ADMIN_PASSWORD = "change-this-before-use"
 $env:COOKIE_SECURE = "false"
+# 可选：会话有效期（毫秒），默认 30 天，范围 5 分钟至 365 天
+$env:SESSION_TTL_MS = "2592000000"
 node server/wayfind-server.js
 ```
 
 后台默认监听 `127.0.0.1:4899`。生产环境使用独立 systemd 服务和 Nginx HTTPS 反向代理，不把该端口直接暴露给浏览器。
+登录会话默认有效 30 天，后台持续使用时会自动续期；会话记录保存在 SQLite，服务重启后只要仍未过期就不需要重新登录。生产环境请固定设置 `SESSION_SECRET`，否则服务重启后旧 Cookie 会失效。
 
 ## GitHub Pages
 

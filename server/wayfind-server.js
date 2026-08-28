@@ -24,7 +24,21 @@ const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const COOKIE_SECURE = process.env.COOKIE_SECURE !== "false";
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MIN_SESSION_TTL_MS = 5 * 60 * 1000;
+const MAX_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+
+function configuredSessionTtl(value) {
+  if (value === undefined || value === "") return DEFAULT_SESSION_TTL_MS;
+  const ttl = Number(value);
+  if (!Number.isSafeInteger(ttl) || ttl < MIN_SESSION_TTL_MS || ttl > MAX_SESSION_TTL_MS) {
+    throw new Error(`SESSION_TTL_MS must be an integer between ${MIN_SESSION_TTL_MS} and ${MAX_SESSION_TTL_MS}`);
+  }
+  return ttl;
+}
+
+const SESSION_TTL_MS = configuredSessionTtl(process.env.SESSION_TTL_MS);
+const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_LOGIN_ATTEMPT_RECORDS = 10_000;
 const MAX_SESSION_RECORDS = 10_000;
@@ -105,7 +119,14 @@ db.exec(`
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   CREATE INDEX IF NOT EXISTS links_category_position ON links(category, position);
+  CREATE INDEX IF NOT EXISTS sessions_expires_at ON sessions(expires_at);
 `);
 
 function ensureColumn(table, column, definition) {
@@ -141,7 +162,6 @@ if (Number(db.prepare("SELECT COUNT(*) AS count FROM links").get().count) === 0)
   }
 }
 
-const sessions = new Map();
 const loginAttempts = new Map();
 
 function configuredPasswordHash() {
@@ -266,11 +286,11 @@ function pruneLoginAttempts(now) {
 }
 
 function pruneExpiredSessions(now) {
-  for (const [id, session] of sessions) {
-    if (session.expiresAt <= now) sessions.delete(id);
-  }
-  while (sessions.size >= MAX_SESSION_RECORDS) {
-    sessions.delete(sessions.keys().next().value);
+  db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
+  const count = Number(db.prepare("SELECT COUNT(*) AS count FROM sessions").get().count);
+  const overflow = count - MAX_SESSION_RECORDS + 1;
+  if (overflow > 0) {
+    db.prepare("DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY created_at ASC LIMIT ?)").run(overflow);
   }
 }
 
@@ -288,9 +308,11 @@ function signSession(id) {
 }
 
 function createSession(username) {
-  pruneExpiredSessions(Date.now());
+  const now = Date.now();
+  pruneExpiredSessions(now);
   const id = crypto.randomBytes(32).toString("base64url");
-  sessions.set(id, { username, expiresAt: Date.now() + SESSION_TTL_MS });
+  db.prepare("INSERT INTO sessions (id, username, expires_at, created_at) VALUES (?, ?, ?, ?)")
+    .run(id, username, now + SESSION_TTL_MS, now);
   return `${id}.${signSession(id)}`;
 }
 
@@ -302,18 +324,20 @@ function getSession(req) {
   const expectedSignature = Buffer.from(signSession(id), "base64url");
   const actualSignature = Buffer.from(signature, "base64url");
   if (actualSignature.length !== expectedSignature.length || !crypto.timingSafeEqual(actualSignature, expectedSignature)) return null;
-  const session = sessions.get(id);
-  if (!session || session.expiresAt <= Date.now()) {
-    sessions.delete(id);
+  const session = db.prepare("SELECT id, username, expires_at AS expiresAt FROM sessions WHERE id = ?").get(id);
+  const now = Date.now();
+  if (!session || Number(session.expiresAt) <= now) {
+    if (session) db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
     return null;
   }
-  session.expiresAt = Date.now() + SESSION_TTL_MS;
-  return { id, ...session };
+  const expiresAt = now + SESSION_TTL_MS;
+  db.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?").run(expiresAt, id);
+  return { id, username: session.username, expiresAt };
 }
 
 function sessionCookie(token) {
   const secure = COOKIE_SECURE ? "; Secure" : "";
-  return `wayfind_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}${secure}`;
+  return `wayfind_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
 }
 
 function clearSessionCookie() {
@@ -326,6 +350,8 @@ function requireSession(req, res) {
     sendJson(res, 401, { error: "登录已失效，请重新登录" });
     return null;
   }
+  // Refresh the browser cookie while the account is actively being used.
+  res.setHeader("Set-Cookie", sessionCookie(`${session.id}.${signSession(session.id)}`));
   return session;
 }
 
@@ -515,7 +541,7 @@ function handlePasswordChange(req, res) {
     db.prepare("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
       .run("admin_password_hash", nextPasswordHash, now);
     passwordHash = nextPasswordHash;
-    sessions.clear();
+    db.prepare("DELETE FROM sessions").run();
     return sendJson(res, 200, { ok: true, reauthenticate: true }, { "Set-Cookie": clearSessionCookie() });
   }).catch((error) => sendRequestError(res, error));
 }
@@ -698,11 +724,12 @@ const server = http.createServer((req, res) => {
   if (pathname === "/api/auth/logout" && req.method === "POST") {
     if (!isAllowedAdminOrigin(req)) return sendJson(res, 403, { error: "来源不被允许" });
     const session = getSession(req);
-    if (session) sessions.delete(session.id);
+    if (session) db.prepare("DELETE FROM sessions WHERE id = ?").run(session.id);
     return sendJson(res, 200, { ok: true }, { "Set-Cookie": clearSessionCookie() });
   }
   if (pathname === "/api/auth/session" && req.method === "GET") {
     const session = getSession(req);
+    if (session) res.setHeader("Set-Cookie", sessionCookie(`${session.id}.${signSession(session.id)}`));
     return sendJson(res, 200, session ? { authenticated: true, username: session.username } : { authenticated: false });
   }
   if (pathname === "/api/admin/links" && req.method === "GET") {
