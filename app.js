@@ -91,6 +91,8 @@ function validateNavigationData(data) {
     && typeof item.id === "string"
     && typeof item.name === "string"
     && typeof item.description === "string"
+    && Number.isInteger(item.position)
+    && item.position >= 0
   ));
   const names = new Set(categories.map((item) => item.name));
   const links = data.links.filter((item) => (
@@ -103,12 +105,20 @@ function validateNavigationData(data) {
     && typeof item.description === "string"
     && typeof item.note === "string"
     && typeof item.url === "string"
+    && Number.isInteger(item.position)
+    && item.position >= 0
   ));
 
   if (categories.length !== data.categories.length || links.length !== data.links.length) {
     throw new Error("Navigation API returned malformed records");
   }
+  categories.sort(comparePosition);
   return { categories, links };
+}
+
+function comparePosition(left, right) {
+  return left.position - right.position
+    || String(left.name || left.title).localeCompare(String(right.name || right.title), "zh-CN");
 }
 
 function renderSectionNav(categories) {
@@ -118,7 +128,7 @@ function renderSectionNav(categories) {
 }
 
 function renderSection(section, allLinks, index) {
-  const links = allLinks.filter((link) => link.category === section.name);
+  const links = allLinks.filter((link) => link.category === section.name).sort(comparePosition);
   return `<section class="link-section" id="${escapeAttribute(section.id)}" aria-labelledby="${escapeAttribute(section.id)}-title">
     <div class="section-heading">
       <div class="section-heading-copy">

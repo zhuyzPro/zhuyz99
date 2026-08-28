@@ -242,17 +242,31 @@ h1 {
   margin-bottom: 15px;
   font-size: 4.25rem;
   font-weight: 700;
-  letter-spacing: -0.065em;
+  letter-spacing: 0;
   line-height: 1.02;
 }
 
 .headline-gradient {
   display: inline-block;
   background: linear-gradient(112deg, var(--teal) 0%, var(--blue) 48%, var(--coral) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--teal);
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .headline-gradient {
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+@media (forced-colors: active) {
+  .headline-gradient {
+    background: none;
+    color: CanvasText;
+    -webkit-text-fill-color: currentColor;
+  }
 }
 
 .headline-gradient em {
@@ -386,7 +400,7 @@ h1 {
   margin: 0 0 3px;
   font-size: 1.55rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
@@ -600,6 +614,12 @@ h1 {
   font-size: 0.67rem;
 }
 
+@media (min-width: 681px) {
+  .site-footer {
+    padding-right: 78px;
+  }
+}
+
 .load-state {
   margin: 38px 0 0;
   padding: 18px;
@@ -639,7 +659,7 @@ h1 {
 
   h1 {
     font-size: 2.9rem;
-    letter-spacing: -0.055em;
+    letter-spacing: 0;
   }
 
   .section-nav {

@@ -28,7 +28,7 @@ jobs:
       - name: Prepare public site
         run: |
           mkdir -p _site
-          cp index.html styles.css app.js lucide.js _site/
+          cp index.html styles.css app.js lucide-mini.js _site/
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:

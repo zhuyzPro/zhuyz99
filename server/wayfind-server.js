@@ -16,7 +16,7 @@ const ADMIN_FILES = new Map([
   ["index.html", "text/html; charset=utf-8"],
   ["admin.css", "text/css; charset=utf-8"],
   ["admin.js", "application/javascript; charset=utf-8"],
-  ["lucide.js", "application/javascript; charset=utf-8"],
+  ["lucide-mini.js", "application/javascript; charset=utf-8"],
 ]);
 const DB_PATH = process.env.DB_PATH || path.join(ROOT_DIR, "wayfind.sqlite");
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
@@ -367,7 +367,12 @@ function readJson(req) {
 }
 
 function textField(value, name, { required = true, max = 240 } = {}) {
-  const text = String(value ?? "").trim();
+  if (value === undefined || value === null) {
+    if (required) throw Object.assign(new Error(`${name}不能为空`), { status: 400 });
+    return "";
+  }
+  if (typeof value !== "string") throw Object.assign(new Error(`${name}必须是文本`), { status: 400 });
+  const text = value.trim();
   if (required && !text) throw Object.assign(new Error(`${name}不能为空`), { status: 400 });
   if (text.length > max) throw Object.assign(new Error(`${name}不能超过${max}个字符`), { status: 400 });
   return text;
