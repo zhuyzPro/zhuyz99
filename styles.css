@@ -478,6 +478,17 @@ h1 {
   gap: 12px;
 }
 
+.card-host {
+  min-width: 0;
+  margin: 4px auto 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.67rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .card-identity {
   display: flex;
   min-width: 0;
@@ -596,14 +607,6 @@ h1 {
   min-width: 0;
   flex: 1 1 auto;
   overflow-wrap: anywhere;
-}
-
-.card-meta span:last-child {
-  min-width: 0;
-  max-inline-size: 48%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .site-footer {

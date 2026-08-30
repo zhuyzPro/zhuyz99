@@ -164,6 +164,7 @@ function renderCard(link, index) {
   return `<a class="link-card tone-${escapeAttribute(link.tone || "teal")}" href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer" aria-label="打开 ${escapeAttribute(link.title)}（新标签页）">
     <div class="card-topline">
       <span class="status-badge">${escapeHtml(link.status)}</span>
+      <span class="card-host" title="${escapeAttribute(getHost(url))}">${escapeHtml(getHost(url))}</span>
       <span class="card-number" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span>
     </div>
     <div class="card-identity">
@@ -173,7 +174,6 @@ function renderCard(link, index) {
     <p class="card-description">${escapeHtml(link.description)}</p>
     <div class="card-meta">
       <span>${escapeHtml(link.note)}</span>
-      <span>${escapeHtml(getHost(url))}</span>
     </div>
   </a>`;
 }
