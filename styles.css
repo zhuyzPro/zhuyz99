@@ -292,7 +292,7 @@ h1 {
   border-bottom: 1px solid var(--line);
 }
 
-.section-nav a {
+.section-nav button {
   --nav-tone: var(--teal);
   position: relative;
   display: inline-flex;
@@ -309,14 +309,17 @@ h1 {
   background: color-mix(in srgb, var(--nav-tone) 8%, var(--surface));
   box-shadow: 0 7px 18px color-mix(in srgb, var(--nav-tone) 8%, transparent);
   color: var(--text);
+  cursor: pointer;
   font-size: 0.92rem;
   font-weight: 700;
+  font-family: inherit;
   text-decoration: none;
+  text-align: left;
   overflow-wrap: anywhere;
   transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.section-nav a::after {
+.section-nav button::after {
   position: absolute;
   right: 14px;
   bottom: -1px;
@@ -328,13 +331,18 @@ h1 {
   opacity: 0.85;
 }
 
-.section-nav a:nth-child(2) { --nav-tone: var(--coral); }
-.section-nav a:nth-child(3) { --nav-tone: var(--blue); }
-.section-nav a:nth-child(4) { --nav-tone: var(--purple); }
-.section-nav a:nth-child(5) { --nav-tone: var(--yellow); }
+.section-nav .nav-tone-purple { --nav-tone: var(--purple); }
+.section-nav .nav-tone-teal { --nav-tone: var(--teal); }
+.section-nav .nav-tone-coral { --nav-tone: var(--coral); }
+.section-nav .nav-tone-blue { --nav-tone: var(--blue); }
+.section-nav .nav-tone-yellow { --nav-tone: var(--yellow); }
+.section-nav .nav-tone-orange { --nav-tone: var(--orange); }
+.section-nav .nav-tone-rose { --nav-tone: var(--rose); }
+.section-nav .nav-tone-lime { --nav-tone: var(--lime); }
+.section-nav .nav-tone-indigo { --nav-tone: var(--indigo); }
 
-.section-nav a:hover,
-.section-nav a:focus-visible {
+.section-nav button:hover,
+.section-nav button:focus-visible {
   border-color: var(--line-strong);
   background: var(--surface-hover);
   box-shadow: var(--shadow);
@@ -343,6 +351,12 @@ h1 {
   box-shadow: 0 10px 22px color-mix(in srgb, var(--nav-tone) 15%, transparent);
   color: var(--text);
   transform: translateY(-2px);
+}
+
+.section-nav button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--nav-tone) 68%, var(--line-strong));
+  background: color-mix(in srgb, var(--nav-tone) 15%, var(--surface-hover));
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--nav-tone) 15%, transparent);
 }
 
 .nav-index {
@@ -696,7 +710,24 @@ h1 {
   }
 
   .section-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
     margin-top: 38px;
+  }
+
+  .section-nav button {
+    min-width: 0;
+    width: 100%;
+    gap: 6px;
+    padding: 8px;
+    font-size: 0.76rem;
+  }
+
+  .section-nav .nav-index {
+    width: 21px;
+    height: 21px;
+    font-size: 0.6rem;
   }
 
   .link-section {

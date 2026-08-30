@@ -1,11 +1,21 @@
 const PUBLIC_API_URL = "https://zhuyz.art/wayfind-api/public/links";
 const THEME_STORAGE_KEY = "wayfind-theme";
+const ALL_CATEGORY_ID = "__all__";
+const NAV_TONES = ["purple", "teal", "coral", "blue", "yellow", "orange", "rose", "lime", "indigo"];
+let selectedCategoryId = ALL_CATEGORY_ID;
+let navigationData = { categories: [], links: [] };
 let isNavigationLoading = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   initializeTheme();
   const container = document.querySelector("#link-sections");
   if (!container) return;
+
+  document.querySelector("#section-nav")?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-category-id]");
+    if (!button || !event.currentTarget.contains(button)) return;
+    selectCategory(button.dataset.categoryId);
+  });
 
   loadAndRenderNavigation(container);
 });
@@ -17,13 +27,16 @@ async function loadAndRenderNavigation(container) {
   container.innerHTML = '<p class="load-state" role="status">正在加载导航...</p>';
   try {
     const data = await loadNavigationData();
+    navigationData = data;
+    if (selectedCategoryId !== ALL_CATEGORY_ID && !data.categories.some((category) => category.id === selectedCategoryId)) {
+      selectedCategoryId = ALL_CATEGORY_ID;
+    }
     renderSectionNav(data.categories);
-    container.innerHTML = data.categories.length
-      ? data.categories.map((section, index) => renderSection(section, data.links, index)).join("")
-      : '<p class="load-state" role="status">暂时没有可展示的入口。</p>';
-    refreshIcons();
+    renderVisibleSections(container);
   } catch (error) {
     console.error("Navigation loading failed:", error);
+    navigationData = { categories: [], links: [] };
+    selectedCategoryId = ALL_CATEGORY_ID;
     renderSectionNav([]);
     container.innerHTML = `<div class="load-state">
       <p role="status">导航暂时无法加载，请重新加载。</p>
@@ -36,6 +49,28 @@ async function loadAndRenderNavigation(container) {
     container.removeAttribute("aria-busy");
     isNavigationLoading = false;
   }
+}
+
+function selectCategory(categoryId) {
+  if (!categoryId || categoryId === selectedCategoryId) return;
+  if (categoryId !== ALL_CATEGORY_ID && !navigationData.categories.some((category) => category.id === categoryId)) return;
+
+  selectedCategoryId = categoryId;
+  updateCategoryFilterState();
+  const container = document.querySelector("#link-sections");
+  if (container) renderVisibleSections(container);
+}
+
+function renderVisibleSections(container) {
+  const { categories, links } = navigationData;
+  const visibleCategories = selectedCategoryId === ALL_CATEGORY_ID
+    ? categories
+    : categories.filter((category) => category.id === selectedCategoryId);
+
+  container.innerHTML = visibleCategories.length
+    ? visibleCategories.map((section) => renderSection(section, links, categories.indexOf(section))).join("")
+    : '<p class="load-state" role="status">暂时没有可展示的入口。</p>';
+  refreshIcons();
 }
 
 function initializeTheme() {
@@ -136,7 +171,20 @@ function comparePosition(left, right) {
 function renderSectionNav(categories) {
   const nav = document.querySelector("#section-nav");
   if (!nav) return;
-  nav.innerHTML = categories.map((category, index) => `<a href="#${escapeAttribute(category.id)}"><span class="nav-index">${String(index + 1).padStart(2, "0")}</span>${escapeHtml(category.name)}</a>`).join("");
+  const allButton = `<button class="section-filter nav-tone-purple" type="button" data-category-id="${ALL_CATEGORY_ID}" aria-pressed="false"><span class="nav-index">00</span>全部</button>`;
+  const categoryButtons = categories.map((category, index) => {
+    const tone = NAV_TONES[(index + 1) % NAV_TONES.length];
+    return `<button class="section-filter nav-tone-${tone}" type="button" data-category-id="${escapeAttribute(category.id)}" aria-pressed="false"><span class="nav-index">${String(index + 1).padStart(2, "0")}</span>${escapeHtml(category.name)}</button>`;
+  }).join("");
+  nav.innerHTML = allButton + categoryButtons;
+  updateCategoryFilterState();
+}
+
+function updateCategoryFilterState() {
+  document.querySelectorAll("#section-nav button[data-category-id]").forEach((button) => {
+    const isSelected = button.dataset.categoryId === selectedCategoryId;
+    button.setAttribute("aria-pressed", String(isSelected));
+  });
 }
 
 function renderSection(section, allLinks, index) {
