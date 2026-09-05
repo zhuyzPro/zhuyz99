@@ -28,7 +28,7 @@ jobs:
       - name: Prepare public site
         run: |
           mkdir -p _site
-          cp index.html styles.css app.js lucide-mini.js favicon.svg _site/
+          cp index.html styles.css app.js lucide-mini.js favicon.svg navigation-data.json _site/
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:

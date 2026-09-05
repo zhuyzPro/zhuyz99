@@ -31,7 +31,7 @@
         <div class="header-actions">
           <span id="session-user" class="session-user" hidden></span>
           <span id="front-divider" class="header-divider" aria-hidden="true" hidden></span>
-          <a id="front-link" class="front-link" href="https://zhuyzpro.github.io/zhuyz99/" target="_blank" rel="noopener noreferrer" title="打开前台" hidden>
+          <a id="front-link" class="front-link" href="../preview/" target="_blank" rel="noopener noreferrer" title="打开内网前台" hidden>
             <i data-lucide="external-link" aria-hidden="true"></i><span>进入前台</span>
           </a>
           <span id="logout-divider" class="header-divider" aria-hidden="true" hidden></span>
@@ -66,10 +66,12 @@
               <p class="dashboard-copy">保存后，公开导航下次刷新即可看到最新内容。</p>
             </div>
             <div class="heading-actions">
+              <button id="publish-button" class="secondary-button publish-button" type="button" title="将已启用内容同步到 GitHub Pages"><i data-lucide="upload" aria-hidden="true"></i><span>发布给访客</span></button>
               <button id="add-category-button" class="secondary-button" type="button"><i data-lucide="folder-plus" aria-hidden="true"></i><span>新增分类</span></button>
               <button id="add-button" class="primary-button" type="button"><i data-lucide="plus" aria-hidden="true"></i><span>新增入口</span></button>
             </div>
           </div>
+          <p id="publish-status" class="publish-status" role="status" aria-live="polite">保存后点击“发布给访客”，将当前已启用内容同步到 GitHub Pages。</p>
           <div id="flash" class="flash" role="status" aria-live="polite" hidden></div>
           <div id="category-panels" class="category-panels"></div>
         </section>

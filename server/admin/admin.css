@@ -153,6 +153,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .dashboard-heading h1 { margin-bottom: 10px; }
 .dashboard-copy { margin: 0; }
 .heading-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; justify-content: flex-end; }
+.publish-button svg { width: 15px; height: 15px; }
+.publish-status { margin: -18px 0 24px; color: var(--faint); font-size: .76rem; }
+.publish-status[data-state="pending"] { color: var(--muted); }
+.publish-status[data-state="success"] { color: var(--teal); }
+.publish-status[data-state="error"] { color: var(--danger); }
 .flash { margin: -10px 0 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: .78rem; }
 .flash.success { border-color: rgba(97, 216, 196, .4); color: var(--teal); }
 .flash.error { border-color: rgba(255, 118, 99, .4); color: var(--danger); }
