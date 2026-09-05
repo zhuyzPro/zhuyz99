@@ -1,4 +1,4 @@
-const NAVIGATION_DATA_URL = "./navigation-data.json";
+const PUBLIC_API_URL = "https://zhuyz.art/wayfind-api/public/links";
 const THEME_STORAGE_KEY = "wayfind-theme";
 const ALL_CATEGORY_ID = "__all__";
 const NAV_TONES = ["purple", "teal", "coral", "blue", "yellow", "orange", "rose", "lime", "indigo"];
@@ -119,12 +119,12 @@ async function loadNavigationData() {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(NAVIGATION_DATA_URL, {
+    const response = await fetch(PUBLIC_API_URL, {
       headers: { Accept: "application/json" },
       cache: "no-store",
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`Navigation data returned ${response.status}`);
+    if (!response.ok) throw new Error(`Navigation API returned ${response.status}`);
     return validateNavigationData(await response.json());
   } finally {
     window.clearTimeout(timeoutId);
@@ -133,7 +133,7 @@ async function loadNavigationData() {
 
 function validateNavigationData(data) {
   if (!data || !Array.isArray(data.categories) || !Array.isArray(data.links)) {
-    throw new Error("Navigation data returned invalid data");
+    throw new Error("Navigation API returned invalid data");
   }
 
   const categories = data.categories.filter((item) => (

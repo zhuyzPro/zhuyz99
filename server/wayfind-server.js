@@ -19,14 +19,6 @@ const ADMIN_FILES = new Map([
   ["admin.js", "application/javascript; charset=utf-8"],
   ["lucide-mini.js", "application/javascript; charset=utf-8"],
 ]);
-const FRONTEND_DIR = path.resolve(ROOT_DIR, "..");
-const FRONTEND_FILES = new Map([
-  ["index.html", "text/html; charset=utf-8"],
-  ["styles.css", "text/css; charset=utf-8"],
-  ["app.js", "application/javascript; charset=utf-8"],
-  ["lucide-mini.js", "application/javascript; charset=utf-8"],
-  ["favicon.svg", "image/svg+xml; charset=utf-8"],
-]);
 const DB_PATH = process.env.DB_PATH || (NODE_ENV === "production"
   ? "/var/lib/wayfind-admin/wayfind.sqlite"
   : path.join(ROOT_DIR, "wayfind.sqlite"));
@@ -68,12 +60,6 @@ const COOKIE_PATH = configuredCookiePath(process.env.COOKIE_PATH);
 const SESSION_TTL_MS = configuredSessionTtl(process.env.SESSION_TTL_MS);
 const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
 const MAX_BODY_BYTES = 1024 * 1024;
-const MAX_GITHUB_RESPONSE_BYTES = 2 * 1024 * 1024;
-const GITHUB_API_URL = process.env.GITHUB_API_URL || "https://api.github.com";
-const GITHUB_REPOSITORY = process.env.GITHUB_REPOSITORY || "zhuyzPro/zhuyz99";
-const GITHUB_BRANCH = process.env.GITHUB_BRANCH || "main";
-const GITHUB_FILE_PATH = process.env.GITHUB_FILE_PATH || "navigation-data.json";
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 const MAX_LOGIN_ATTEMPT_RECORDS = 10_000;
 const MAX_SESSION_RECORDS = 10_000;
 const ADMIN_ORIGINS = new Set([
@@ -100,8 +86,6 @@ const DEFAULT_CATEGORIES = [
   { id: "other", name: "其他", description: "日常使用的工具与网站" },
 ];
 const TONES = new Set(["coral", "teal", "yellow", "blue", "purple", "orange", "rose", "lime", "indigo"]);
-
-let publishInProgress = false;
 
 const SEED_LINKS = [
   ["中转站", "OpenRouter", "OR", "coral", "推荐", "多模型统一入口，按需切换模型和供应商。", "模型聚合 · API", "https://openrouter.ai/"],
@@ -302,7 +286,7 @@ function sendText(res, status, body, contentType = "text/plain; charset=utf-8") 
 }
 
 function sendRequestError(res, error) {
-  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
+  const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
   if (status === 500) console.error(error);
   if (res.headersSent || res.writableEnded) {
     res.destroy();
@@ -597,144 +581,6 @@ function toPublicLink(row) {
   };
 }
 
-function publicNavigationSnapshot() {
-  return {
-    categories: getPublicCategories(),
-    links: getPublicLinks(),
-  };
-}
-
-function validateGitHubPublishConfig() {
-  if (!GITHUB_TOKEN) {
-    throw Object.assign(new Error("服务器尚未配置 GitHub 发布凭据"), { status: 503 });
-  }
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(GITHUB_REPOSITORY)) {
-    throw Object.assign(new Error("GitHub 仓库配置不正确"), { status: 500 });
-  }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(GITHUB_FILE_PATH)
-    || GITHUB_FILE_PATH.startsWith("/")
-    || GITHUB_FILE_PATH.endsWith("/")
-    || GITHUB_FILE_PATH.split("/").some((part) => part === "" || part === "." || part === "..")) {
-    throw Object.assign(new Error("GitHub 发布文件路径配置不正确"), { status: 500 });
-  }
-  if (!/^[^\r\n]{1,200}$/.test(GITHUB_BRANCH)) {
-    throw Object.assign(new Error("GitHub 分支配置不正确"), { status: 500 });
-  }
-  let apiBase;
-  try {
-    apiBase = new URL(GITHUB_API_URL);
-  } catch {
-    throw Object.assign(new Error("GitHub API 地址配置不正确"), { status: 500 });
-  }
-  if (!["http:", "https:"].includes(apiBase.protocol)) {
-    throw Object.assign(new Error("GitHub API 地址配置不正确"), { status: 500 });
-  }
-}
-
-function githubContentsUrl() {
-  const repositoryPath = GITHUB_REPOSITORY.split("/").map(encodeURIComponent).join("/");
-  const filePath = GITHUB_FILE_PATH.split("/").map(encodeURIComponent).join("/");
-  const base = GITHUB_API_URL.endsWith("/") ? GITHUB_API_URL : `${GITHUB_API_URL}/`;
-  return new URL(`repos/${repositoryPath}/contents/${filePath}`, base);
-}
-
-async function githubRequest(url, options = {}, allowedStatuses = []) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        ...(options.headers || {}),
-      },
-      signal: controller.signal,
-    });
-    const contentLength = Number(response.headers.get("content-length") || 0);
-    if (contentLength > MAX_GITHUB_RESPONSE_BYTES) {
-      throw Object.assign(new Error("GitHub 响应内容过大"), { status: 502 });
-    }
-    const text = await response.text();
-    if (Buffer.byteLength(text, "utf8") > MAX_GITHUB_RESPONSE_BYTES) {
-      throw Object.assign(new Error("GitHub 响应内容过大"), { status: 502 });
-    }
-    let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
-    if (!response.ok && !allowedStatuses.includes(response.status)) {
-      const detail = typeof data?.message === "string" ? data.message : `HTTP ${response.status}`;
-      const error = Object.assign(new Error(`GitHub 发布失败：${detail}`), { status: response.status === 409 ? 409 : 502 });
-      throw error;
-    }
-    return { status: response.status, data };
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw Object.assign(new Error("连接 GitHub 超时，请稍后重试"), { status: 504 });
-    }
-    if (!error?.status && error?.name === "TypeError") {
-      throw Object.assign(new Error("无法连接 GitHub，请检查服务器网络"), { status: 502 });
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-function decodeGitHubContent(value) {
-  if (typeof value !== "string") return null;
-  try {
-    return Buffer.from(value.replace(/\s/g, ""), "base64").toString("utf8");
-  } catch {
-    return null;
-  }
-}
-
-async function publishNavigationSnapshot() {
-  validateGitHubPublishConfig();
-  if (publishInProgress) {
-    throw Object.assign(new Error("已有发布任务正在进行，请稍后再试"), { status: 409 });
-  }
-  publishInProgress = true;
-  try {
-    const snapshot = publicNavigationSnapshot();
-    const content = `${JSON.stringify(snapshot, null, 2)}\n`;
-    const fileUrl = githubContentsUrl();
-    const lookupUrl = new URL(fileUrl);
-    lookupUrl.searchParams.set("ref", GITHUB_BRANCH);
-    const existing = await githubRequest(lookupUrl, {}, [404]);
-    const existingContent = decodeGitHubContent(existing.data?.content);
-    if (existing.status === 200 && existingContent === content) {
-      return { ok: true, changed: false, publishedAt: new Date().toISOString(), repository: GITHUB_REPOSITORY, branch: GITHUB_BRANCH, path: GITHUB_FILE_PATH };
-    }
-
-    const payload = {
-      message: "Update navigation data",
-      content: Buffer.from(content, "utf8").toString("base64"),
-      branch: GITHUB_BRANCH,
-    };
-    if (existing.status === 200 && typeof existing.data?.sha === "string" && existing.data.sha) payload.sha = existing.data.sha;
-    const result = await githubRequest(fileUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }, [200, 201]);
-    const commit = result.data?.commit;
-    return {
-      ok: true,
-      changed: true,
-      publishedAt: new Date().toISOString(),
-      repository: GITHUB_REPOSITORY,
-      branch: GITHUB_BRANCH,
-      path: GITHUB_FILE_PATH,
-      commitSha: typeof commit?.sha === "string" ? commit.sha : undefined,
-      commitUrl: typeof commit?.html_url === "string" ? commit.html_url : undefined,
-    };
-  } finally {
-    publishInProgress = false;
-  }
-}
-
 function getLink(id) {
   const row = db.prepare("SELECT * FROM links WHERE id = ?").get(id);
   return row ? toLink(row) : null;
@@ -988,17 +834,6 @@ function serveAdminFile(req, res, pathname) {
   } catch { sendText(res, 404, "Not found\n"); }
 }
 
-function serveFrontendFile(req, res, pathname) {
-  const relative = pathname === "/preview/" ? "index.html" : pathname.slice("/preview/".length);
-  const contentType = FRONTEND_FILES.get(relative);
-  if (!contentType) return sendText(res, 404, "Not found\n");
-  const file = path.join(FRONTEND_DIR, relative);
-  try {
-    const body = fs.readFileSync(file);
-    sendText(res, 200, body, contentType);
-  } catch { sendText(res, 404, "Not found\n"); }
-}
-
 const server = http.createServer((req, res) => {
   try {
     const requestUrl = new URL(req.url || "/", "http://localhost");
@@ -1064,20 +899,6 @@ const server = http.createServer((req, res) => {
     if (!requireSession(req, res)) return;
     return handleReorder(req, res);
   }
-  if (pathname === "/api/admin/publish" && req.method === "POST") {
-    if (!requireSession(req, res)) return;
-    return publishNavigationSnapshot()
-      .then((result) => sendJson(res, 200, result))
-      .catch((error) => sendRequestError(res, error));
-  }
-  if (pathname === "/preview" && req.method === "GET") {
-    res.writeHead(301, { Location: "/preview/" });
-    return res.end();
-  }
-  if (pathname === "/preview/navigation-data.json" && req.method === "GET") {
-    return sendJson(res, 200, publicNavigationSnapshot());
-  }
-  if (pathname.startsWith("/preview/") && req.method === "GET") return serveFrontendFile(req, res, pathname);
   if (pathname === "/admin" && req.method === "GET") {
     res.writeHead(301, { Location: "/admin/" });
     return res.end();

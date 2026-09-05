@@ -15,20 +15,10 @@ const state = {
 
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
-  configureFrontLink();
   initializeTheme();
   refreshIcons();
   start();
 });
-
-function configureFrontLink() {
-  const link = document.querySelector("#front-link");
-  if (!link) return;
-  if (window.location.pathname.startsWith("/wayfind-admin")) {
-    link.href = "https://zhuyzpro.github.io/zhuyz99/";
-    link.title = "打开公开前台";
-  }
-}
 
 function initializeTheme() {
   const savedTheme = readStoredTheme();
@@ -87,7 +77,6 @@ function bindEvents() {
   document.querySelector("#login-form").addEventListener("submit", login);
   document.querySelector("#logout-button").addEventListener("click", logout);
   document.querySelector("#settings-button").addEventListener("click", openSettingsDialog);
-  document.querySelector("#publish-button").addEventListener("click", publishNavigation);
   document.querySelector("#add-button").addEventListener("click", () => openDialog());
   document.querySelector("#add-category-button").addEventListener("click", () => openCategoryDialog());
   document.querySelector("#category-panels").addEventListener("click", handlePanelClick);
@@ -133,40 +122,6 @@ async function logout() {
   } catch (error) {
     showFlash(error.message, "error");
   }
-}
-
-async function publishNavigation() {
-  const button = document.querySelector("#publish-button");
-  if (!button || button.disabled) return;
-  button.disabled = true;
-  setPublishStatus("正在同步到 GitHub Pages…", "pending");
-  try {
-    const result = await request("/admin/publish", { method: "POST" });
-    if (result.changed) {
-      setPublishStatus("已提交到 GitHub，Pages 将自动部署。", "success");
-      showFlash("已发布给访客，GitHub Pages 正在部署。", "success");
-    } else {
-      setPublishStatus("访客前台已经是最新内容。", "success");
-      showFlash("没有新的内容需要发布。", "success");
-    }
-  } catch (error) {
-    if (handleSessionExpired(error)) return;
-    setPublishStatus(error.message, "error");
-    showFlash(error.message, "error");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-function setPublishStatus(message, type = "") {
-  const target = document.querySelector("#publish-status");
-  if (!target) return;
-  target.textContent = message;
-  target.dataset.state = type;
-}
-
-function markPublishPending() {
-  setPublishStatus("有未发布的本地修改，点击“发布给访客”同步。", "pending");
 }
 
 async function showDashboard(username) {
@@ -280,7 +235,6 @@ async function handlePanelClick(event) {
       await request(`/admin/links/${encodeURIComponent(link.id)}`, { method: "DELETE", body: { updatedAt: link.updatedAt } });
       state.links = state.links.filter((item) => item.id !== link.id);
       render();
-      markPublishPending();
       showFlash("入口已删除。", "success");
     } catch (error) {
       if (!handleSessionExpired(error)) showFlash(error.message, "error");
@@ -305,7 +259,6 @@ async function handlePanelClick(event) {
     });
     state.links = result.links || state.links;
     render();
-    markPublishPending();
     showFlash("排序已保存。", "success");
   } catch (error) {
     if (!handleSessionExpired(error)) showFlash(error.message, "error");
@@ -320,7 +273,6 @@ async function toggleCategoryEnabled(category, button) {
     const updatedCategory = result.category ? { ...category, ...result.category } : { ...category, enabled };
     state.categories = state.categories.map((item) => item.id === category.id ? updatedCategory : item);
     render();
-    markPublishPending();
     showFlash(enabled ? `分类“${updatedCategory.name}”已开启。` : `分类“${updatedCategory.name}”已关闭。`, "success");
   } catch (error) {
     if (!handleSessionExpired(error)) showFlash(error.message, "error");
@@ -337,7 +289,6 @@ async function toggleLinkEnabled(link, button) {
     const updatedLink = result.link ? { ...link, ...result.link } : { ...link, enabled };
     state.links = state.links.map((item) => item.id === link.id ? updatedLink : item);
     render();
-    markPublishPending();
     showFlash(enabled ? `入口“${updatedLink.title}”已开启。` : `入口“${updatedLink.title}”已关闭。`, "success");
   } catch (error) {
     if (!handleSessionExpired(error)) showFlash(error.message, "error");
@@ -548,7 +499,6 @@ async function deleteCategory(event) {
     state.links = result.links || state.links.filter((link) => link.category !== category.name);
     closeCategoryDeleteDialog();
     render();
-    markPublishPending();
     showFlash("分类已删除。", "success");
   } catch (error) {
     if (handleSessionExpired(error)) return;
@@ -582,7 +532,6 @@ async function saveCategory(event) {
     populateCategoryOptions(result.category.name);
     render();
     closeCategoryDialog(result.category.name);
-    markPublishPending();
     showFlash(editingId ? "分类已更新。" : "分类已添加。", "success");
   } catch (error) {
     if (handleSessionExpired(error, { categoryForm: formElement })) return;
@@ -607,7 +556,6 @@ async function saveLink(event) {
     else state.links.push(result.link);
     closeDialog();
     render();
-    markPublishPending();
     showFlash(state.editingId ? "入口已更新。" : "入口已添加。", "success");
   } catch (error) {
     if (handleSessionExpired(error, { linkForm: formElement })) return;
