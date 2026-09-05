@@ -54,6 +54,11 @@ function configuredCookiePath(value) {
   return cookiePath;
 }
 
+function configuredOptionalCookiePath(value) {
+  if (value === undefined || value === "") return "";
+  return configuredCookiePath(value);
+}
+
 function configuredSessionTtl(value) {
   if (value === undefined || value === "") return DEFAULT_SESSION_TTL_MS;
   const ttl = Number(value);
@@ -65,6 +70,8 @@ function configuredSessionTtl(value) {
 
 const SESSION_SECRET = configuredSessionSecret(process.env.SESSION_SECRET);
 const COOKIE_PATH = configuredCookiePath(process.env.COOKIE_PATH);
+const COOKIE_DIRECT_PATH = configuredOptionalCookiePath(process.env.COOKIE_DIRECT_PATH);
+const COOKIE_DIRECT_SECURE = process.env.COOKIE_DIRECT_SECURE !== "false";
 const SESSION_TTL_MS = configuredSessionTtl(process.env.SESSION_TTL_MS);
 const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -403,18 +410,21 @@ function getSession(req) {
   return { id, username: session.username, expiresAt };
 }
 
-function sessionCookie(token, cookiePath = COOKIE_PATH) {
-  const secure = COOKIE_SECURE ? "; Secure" : "";
+function sessionCookie(token, cookiePath = COOKIE_PATH, secureEnabled = COOKIE_SECURE) {
+  const secure = secureEnabled ? "; Secure" : "";
   return `wayfind_session=${encodeURIComponent(token)}; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}${secure}`;
 }
 
-function clearSessionCookie(cookiePath = COOKIE_PATH) {
-  const secure = COOKIE_SECURE ? "; Secure" : "";
+function clearSessionCookie(cookiePath = COOKIE_PATH, secureEnabled = COOKIE_SECURE) {
+  const secure = secureEnabled ? "; Secure" : "";
   return `wayfind_session=; Path=${cookiePath}; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }
 
 function sessionCookies(token) {
   const cookies = [sessionCookie(token)];
+  if (COOKIE_DIRECT_PATH && COOKIE_DIRECT_PATH !== COOKIE_PATH) {
+    cookies.push(sessionCookie(token, COOKIE_DIRECT_PATH, COOKIE_DIRECT_SECURE));
+  }
   // Old deployments used Path=/. Clear that broad cookie while issuing the
   // scoped replacement so existing logins migrate without a forced logout.
   if (COOKIE_PATH !== "/") cookies.push(clearSessionCookie("/"));
@@ -423,6 +433,9 @@ function sessionCookies(token) {
 
 function clearedSessionCookies() {
   const cookies = [clearSessionCookie()];
+  if (COOKIE_DIRECT_PATH && COOKIE_DIRECT_PATH !== COOKIE_PATH) {
+    cookies.push(clearSessionCookie(COOKIE_DIRECT_PATH, COOKIE_DIRECT_SECURE));
+  }
   if (COOKIE_PATH !== "/") cookies.push(clearSessionCookie("/"));
   return cookies;
 }
